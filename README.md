@@ -2,7 +2,7 @@
 
 ## git remotes
 
-If you clone this and need to update core at some point, please name that branch
+If you clone this and need to update core at some point, please name that remote
 ```drupal``` and name this FK GitHub repo as ```origin```:
 
 ```
