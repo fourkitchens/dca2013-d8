@@ -9,18 +9,19 @@ namespace Drupal\comment\Plugin\Core\Entity;
 
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityNG;
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Core\Entity\Annotation\EntityType;
 use Drupal\Core\Annotation\Translation;
 
 /**
  * Defines the comment entity class.
  *
- * @Plugin(
+ * @EntityType(
  *   id = "comment",
  *   label = @Translation("Comment"),
  *   bundle_label = @Translation("Content type"),
  *   module = "comment",
  *   controller_class = "Drupal\comment\CommentStorageController",
+ *   access_controller_class = "Drupal\comment\CommentAccessController",
  *   render_controller_class = "Drupal\comment\CommentRenderController",
  *   form_controller_class = {
  *     "default" = "Drupal\comment\CommentFormController"

@@ -7,6 +7,8 @@
 
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\aggregator\Plugin\Core\Entity\Feed;
+use Guzzle\Http\Exception\RequestException;
+use Guzzle\Http\Exception\BadResponseException;
 
 /**
  * Page callback: Displays the aggregator administration page.
@@ -43,6 +45,10 @@ function aggregator_view() {
     $links['edit'] = array(
       'title' => t('Edit'),
       'href' => "admin/config/services/aggregator/edit/feed/$feed->fid",
+    );
+    $links['delete'] = array(
+      'title' => t('Delete'),
+      'href' => "admin/config/services/aggregator/delete/feed/$feed->fid",
     );
     $links['remove'] = array(
       'title' => t('Remove items'),
@@ -105,41 +111,6 @@ function aggregator_feed_add() {
     'block' => 5,
   ));
   return entity_get_form($feed);
-}
-
-/**
- * Page callback: Deletes a feed.
- *
- * @param \Drupal\aggregator\Plugin\Core\Entity\Feed $feed
- *   A feed object describing the feed to be cleared.
- *
- * @see aggregator_admin_remove_feed_submit()
- * @see aggregator_menu()
- */
-function aggregator_admin_remove_feed($form, $form_state, Feed $feed) {
-  return confirm_form(
-    array(
-      'feed' => array(
-        '#type' => 'value',
-        '#value' => $feed,
-      ),
-    ),
-    t('Are you sure you want to remove all items from the feed %feed?', array('%feed' => $feed->label())),
-    'admin/config/services/aggregator',
-    t('This action cannot be undone.'),
-    t('Remove items'),
-    t('Cancel')
-  );
-}
-
-/**
- * Form submission handler for aggregator_admin_remove_feed().
- *
- * Removes all items from a feed and redirects to the overview page.
- */
-function aggregator_admin_remove_feed_submit($form, &$form_state) {
-  aggregator_remove($form_state['values']['feed']);
-  $form_state['redirect'] = 'admin/config/services/aggregator';
 }
 
 /**
@@ -217,16 +188,26 @@ function aggregator_form_opml_validate($form, &$form_state) {
 function aggregator_form_opml_submit($form, &$form_state) {
   $data = '';
   $validators = array('file_validate_extensions' => array('opml xml'));
-  if ($file = file_save_upload('upload', $validators)) {
+  if ($file = file_save_upload('upload', $validators, FALSE, 0)) {
     $data = file_get_contents($file->uri);
   }
   else {
-    $response = drupal_http_request($form_state['values']['remote']);
-    if (!isset($response->error)) {
-      $data = $response->data;
+    try {
+      $response = Drupal::httpClient()
+        ->get($form_state['values']['remote'])
+        ->send();
+      $data = $response->getBody(TRUE);
     }
-    else {
-      watchdog('aggregator', 'HTTP request to @url failed with error: @error', array('@url' => $form_state['values']['remote'], '@error' => $response->error));
+    catch (BadResponseException $e) {
+      $response = $e->getResponse();
+      watchdog('aggregator', 'Failed to download OPML file due to "%error".', array('%error' => $response->getStatusCode() . ' ' . $response->getReasonPhrase()), WATCHDOG_WARNING);
+      drupal_set_message(t('Failed to download OPML file due to "%error".', array('%error' => $response->getStatusCode() . ' ' . $response->getReasonPhrase())));
+      return;
+    }
+    catch (RequestException $e) {
+      watchdog('aggregator', 'Failed to download OPML file due to "%error".', array('%error' => $e->getMessage()), WATCHDOG_WARNING);
+      drupal_set_message(t('Failed to download OPML file due to "%error".', array('%error' => $e->getMessage())));
+      return;
     }
   }
 
@@ -321,130 +302,6 @@ function aggregator_admin_refresh_feed(Feed $feed) {
 
   aggregator_refresh($feed);
   drupal_goto('admin/config/services/aggregator');
-}
-
-/**
- * Form constructor for the aggregator system settings.
- *
- * @see aggregator_menu()
- * @see aggregator_admin_form_submit()
- * @ingroup forms
- */
-function aggregator_admin_form($form, $form_state) {
-  // Global aggregator settings.
-  $form['aggregator_allowed_html_tags'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Allowed HTML tags'),
-    '#size' => 80,
-    '#maxlength' => 255,
-    '#default_value' => config('aggregator.settings')->get('items.allowed_html'),
-    '#description' => t('A space-separated list of HTML tags allowed in the content of feed items. Disallowed tags are stripped from the content.'),
-  );
-
-  // Make sure configuration is sane.
-  aggregator_sanitize_configuration();
-
-  // Get all available fetchers.
-  $fetcher_manager = drupal_container()->get('plugin.manager.aggregator.fetcher');
-  $fetchers = array();
-  foreach ($fetcher_manager->getDefinitions() as $id => $definition) {
-    $label = $definition['title'] . ' <span class="description">' . $definition['description'] . '</span>';
-    $fetchers[$id] = $label;
-  }
-
-  // Get all available parsers.
-  $parsers = module_implements('aggregator_parse');
-  foreach ($parsers as $k => $module) {
-    if ($info = module_invoke($module, 'aggregator_parse_info')) {
-      $label = $info['title'] . ' <span class="description">' . $info['description'] . '</span>';
-    }
-    else {
-      $label = $module;
-    }
-    unset($parsers[$k]);
-    $parsers[$module] = $label;
-  }
-
-  // Get all available processors.
-  $processors = module_implements('aggregator_process');
-  foreach ($processors as $k => $module) {
-    if ($info = module_invoke($module, 'aggregator_process_info')) {
-      $label = $info['title'] . ' <span class="description">' . $info['description'] . '</span>';
-    }
-    else {
-      $label = $module;
-    }
-    unset($processors[$k]);
-    $processors[$module] = $label;
-  }
-
-  // Only show basic configuration if there are actually options.
-  $basic_conf = array();
-  if (count($fetchers) > 1) {
-    $basic_conf['aggregator_fetcher'] = array(
-      '#type' => 'radios',
-      '#title' => t('Fetcher'),
-      '#description' => t('Fetchers download data from an external source. Choose a fetcher suitable for the external source you would like to download from.'),
-      '#options' => $fetchers,
-      '#default_value' => config('aggregator.settings')->get('fetcher'),
-    );
-  }
-  if (count($parsers) > 1) {
-    $basic_conf['aggregator_parser'] = array(
-      '#type' => 'radios',
-      '#title' => t('Parser'),
-      '#description' => t('Parsers transform downloaded data into standard structures. Choose a parser suitable for the type of feeds you would like to aggregate.'),
-      '#options' => $parsers,
-      '#default_value' => config('aggregator.settings')->get('parser'),
-    );
-  }
-  if (count($processors) > 1) {
-    $basic_conf['aggregator_processors'] = array(
-      '#type' => 'checkboxes',
-      '#title' => t('Processors'),
-      '#description' => t('Processors act on parsed feed data, for example they store feed items. Choose the processors suitable for your task.'),
-      '#options' => $processors,
-      '#default_value' => config('aggregator.settings')->get('processors'),
-    );
-  }
-  if (count($basic_conf)) {
-    $form['basic_conf'] = array(
-      '#type' => 'details',
-      '#title' => t('Basic configuration'),
-      '#description' => t('For most aggregation tasks, the default settings are fine.'),
-      '#collapsed' => FALSE,
-      );
-    $form['basic_conf'] += $basic_conf;
-  }
-
-  // Implementing modules will expect an array at $form['modules'].
-  $form['modules'] = array();
-
-  return system_config_form($form, $form_state);
-}
-
-/**
- * Form submission handler for aggregator_admin_form().
- */
-function aggregator_admin_form_submit($form, &$form_state) {
-  $config = config('aggregator.settings');
-  $config
-    ->set('items.allowed_html', $form_state['values']['aggregator_allowed_html_tags'])
-    ->set('items.expire', $form_state['values']['aggregator_clear'])
-    ->set('items.teaser_length', $form_state['values']['aggregator_teaser_length'])
-    ->set('source.list_max', $form_state['values']['aggregator_summary_items'])
-    ->set('source.category_selector', $form_state['values']['aggregator_category_selector']);
-
-  if (isset($form_state['values']['aggregator_fetcher'])) {
-    $config->set('fetcher', $form_state['values']['aggregator_fetcher']);
-  }
-  if (isset($form_state['values']['aggregator_parser'])) {
-    $config->set('parser', $form_state['values']['aggregator_parser']);
-  }
-  if (isset($form_state['values']['aggregator_processors'])) {
-    $config->set('processors', array_filter($form_state['values']['aggregator_processors']));
-  }
-  $config->save();
 }
 
 /**

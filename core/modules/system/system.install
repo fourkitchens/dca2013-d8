@@ -397,7 +397,9 @@ function system_requirements($phase) {
       }
     }
     else {
-      if (file_default_scheme() == 'public') {
+      // This function can be called before the config_cache table has been
+      // created.
+      if ($phase == 'install' || file_default_scheme() == 'public') {
         $requirements['file system']['value'] = $t('Writable (<em>public</em> download method)');
       }
       else {
@@ -684,8 +686,6 @@ function system_schema() {
   $schema['cache_bootstrap']['description'] = 'Cache table for data required to bootstrap Drupal, may be routed to a shared memory cache.';
   $schema['cache_config'] = $schema['cache'];
   $schema['cache_config']['description'] = 'Cache table for configuration data.';
-  $schema['cache_form'] = $schema['cache'];
-  $schema['cache_form']['description'] = 'Cache table for the form system to store recently built forms and their storage data, to be used in subsequent page requests.';
   $schema['cache_page'] = $schema['cache'];
   $schema['cache_page']['description'] = 'Cache table used to store compressed pages for anonymous users, if page caching is enabled.';
   $schema['cache_menu'] = $schema['cache'];
@@ -1735,44 +1735,7 @@ function system_update_8022() {
  * Create the 'key_value_expire' table.
  */
 function system_update_8023() {
-  $table = array(
-    'description' => 'Generic key/value storage table with an expiration.',
-    'fields' => array(
-      'collection' => array(
-        'description' => 'A named collection of key and value pairs.',
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => TRUE,
-        'default' => '',
-      ),
-      'name' => array(
-        // KEY is an SQL reserved word, so use 'name' as the key's field name.
-        'description' => 'The key of the key/value pair.',
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => TRUE,
-        'default' => '',
-      ),
-      'value' => array(
-        'description' => 'The value of the key/value pair.',
-        'type' => 'blob',
-        'not null' => TRUE,
-        'size' => 'big',
-      ),
-      'expire' => array(
-        'description' => 'The time since Unix epoch in seconds when this item expires. Defaults to the maximum possible time.',
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 2147483647,
-      ),
-    ),
-    'primary key' => array('collection', 'name'),
-    'indexes' => array(
-      'all' => array('name', 'collection', 'expire'),
-    ),
-  );
-
-  db_create_table('key_value_expire', $table);
+  // Moved to update_fix_d8_requirements() as it is required early.
 }
 
 /**
@@ -2054,7 +2017,7 @@ function system_update_8046() {
     $module_list = drupal_container()->getParameter('container.modules');
     drupal_load('module', 'views');
 
-    drupal_container()->get('kernel')->updateModules(array_keys($module_list), array('views' => 'core/modules/views/views.module'));
+    drupal_container()->get('kernel')->updateModules($module_list, array('views' => 'core/modules/views/views.module'));
 
     // This does not fire a hook just calls views.
     config_install_default_config('module', 'views');
@@ -2089,7 +2052,7 @@ function system_update_8048() {
   update_module_enable(array('menu_link'));
 
   // Add the langcode column if it doesn't exist.
-  if (!db_field_exists('menu_links', 'langcode')) {
+  if (!db_field_exists('menu_inks', 'langcode')) {
     $column = array(
       'description' => 'The {language}.langcode of this entity.',
       'type' => 'varchar',
@@ -2192,6 +2155,27 @@ function system_update_8051() {
   );
 
   db_add_field('menu_links', 'route_name', $spec);
+}
+
+/**
+ * Moves image toolkit settings from variable to config.
+ *
+ * @ingroup config_upgrade
+ */
+function system_update_8052() {
+  update_variables_to_config('system.image', array(
+    'image_toolkit' => 'toolkit',
+  ));
+  update_variables_to_config('system.image.gd', array(
+    'image_jpeg_quality' => 'jpeg_quality',
+  ));
+}
+
+/**
+ * Remove {cache_form} table.
+ */
+function system_update_8053() {
+  db_drop_table('cache_form');
 }
 
 /**

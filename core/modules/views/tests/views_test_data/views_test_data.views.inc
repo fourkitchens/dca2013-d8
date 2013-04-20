@@ -5,13 +5,40 @@
  * Provides views data and hooks for views_test_data module.
  */
 
-use Drupal\views\Analyzer;
 use Drupal\views\ViewExecutable;
+use Drupal\views\Analyzer;
+
+/**
+ * Implements hook_views_data().
+ */
+function views_test_data_views_data() {
+  $state = Drupal::service('state');
+  $state->set('views_hook_test_views_data', TRUE);
+  // We use a state variable to keep track of how many times this function is
+  // called so we can assert that calls to
+  // \Drupal\views\ViewsDataCache::delete() trigger a rebuild of views data.
+  if (!($count = $state->get('views_test_data_views_data_count'))) {
+    $count = 0;
+  }
+  $count++;
+  $state->set('views_test_data_views_data_count', $count);
+
+  return $state->get('views_test_data_views_data');
+}
+
+/**
+ * Implements hook_views_data_alter().
+ */
+function views_test_data_views_data_alter() {
+  state()->set('views_hook_test_views_data_alter', TRUE);
+}
 
 /**
  * Implements hook_views_analyze().
  */
 function views_test_data_views_analyze(ViewExecutable $view) {
+  state()->set('views_hook_test_views_analyze', TRUE);
+
   $ret = array();
 
   $ret[] = Analyzer::formatMessage(t('Test ok message'), 'ok');
@@ -22,43 +49,8 @@ function views_test_data_views_analyze(ViewExecutable $view) {
 }
 
 /**
- * Implements hook_views_data().
+ * Implements hook_views_invalidate_cache().
  */
-function views_test_data_views_data() {
-  return state()->get('views_test_data_views_data');
-}
-
-/**
- * Implements hook_views_data_alter().
- */
-function views_test_data_views_data_alter(&$data) {
-
-}
-
-/**
- * Implements hook_views_query_substitutions().
- */
-function views_test_data_views_query_substitutions() {
-
-}
-
-/**
- * Implements hook_views_form_substitutions().
- */
-function views_test_data_views_form_substitutions() {
-
-}
-
-/**
- * Implements hook_field_views_data().
- */
-function views_test_data_field_views_data($field) {
-
-}
-
-/**
- * Implements hook_field_views_data_alter().
- */
-function views_test_data_field_views_data_alter(&$data, $field, $module) {
-
+function views_test_data_views_invalidate_cache() {
+  state()->set('views_hook_test_views_invalidate_cache', TRUE);
 }

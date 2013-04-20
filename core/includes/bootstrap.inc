@@ -2,11 +2,13 @@
 
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Component\Utility\Settings;
+use Drupal\Component\Utility\String;
+use Drupal\Component\Utility\Timer;
 use Drupal\Core\DrupalKernel;
 use Drupal\Core\Database\Database;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
-use Symfony\Component\ClassLoader\UniversalClassLoader;
-use Symfony\Component\ClassLoader\ApcUniversalClassLoader;
+use Symfony\Component\ClassLoader\ClassLoader;
+use Symfony\Component\ClassLoader\ApcClassLoader;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\Reference;
@@ -334,71 +336,27 @@ const CONFIG_STAGING_DIRECTORY = 'staging';
 define('DRUPAL_ROOT', dirname(dirname(__DIR__)));
 
 /**
- * Starts the timer with the specified name.
- *
- * If you start and stop the same timer multiple times, the measured intervals
- * will be accumulated.
- *
- * @param $name
- *   The name of the timer.
+ * @deprecated as of Drupal 8.0.
+ * @see \Drupal\Component\Utility\Timer::start
  */
 function timer_start($name) {
-  global $timers;
-
-  $timers[$name]['start'] = microtime(TRUE);
-  $timers[$name]['count'] = isset($timers[$name]['count']) ? ++$timers[$name]['count'] : 1;
+  Timer::start($name);
 }
 
 /**
- * Reads the current timer value without stopping the timer.
- *
- * @param $name
- *   The name of the timer.
- *
- * @return
- *   The current timer value in ms.
+ * @deprecated as of Drupal 8.0.
+ * @see \Drupal\Component\Utility\Timer::read
  */
 function timer_read($name) {
-  global $timers;
-
-  if (isset($timers[$name]['start'])) {
-    $stop = microtime(TRUE);
-    $diff = round(($stop - $timers[$name]['start']) * 1000, 2);
-
-    if (isset($timers[$name]['time'])) {
-      $diff += $timers[$name]['time'];
-    }
-    return $diff;
-  }
-  return $timers[$name]['time'];
+  return Timer::read($name);
 }
 
 /**
- * Stops the timer with the specified name.
- *
- * @param $name
- *   The name of the timer.
- *
- * @return
- *   A timer array. The array contains the number of times the timer has been
- *   started and stopped (count) and the accumulated timer value in ms (time).
+ * @deprecated as of Drupal 8.0.
+ * @see \Drupal\Component\Utility\Timer::stop
  */
 function timer_stop($name) {
-  global $timers;
-
-  if (isset($timers[$name]['start'])) {
-    $stop = microtime(TRUE);
-    $diff = round(($stop - $timers[$name]['start']) * 1000, 2);
-    if (isset($timers[$name]['time'])) {
-      $timers[$name]['time'] += $diff;
-    }
-    else {
-      $timers[$name]['time'] = $diff;
-    }
-    unset($timers[$name]['start']);
-  }
-
-  return $timers[$name];
+  return Timer::stop($name);
 }
 
 /**
@@ -424,19 +382,70 @@ function timer_stop($name) {
  * @see default.settings.php
  */
 function conf_path($require_settings = TRUE, $reset = FALSE) {
-  $conf = &drupal_static(__FUNCTION__, '');
+  $conf_path = &drupal_static(__FUNCTION__, '');
 
-  if ($conf && !$reset) {
-    return $conf;
+  if ($conf_path && !$reset) {
+    return $conf_path;
   }
 
+  // Check for a simpletest override.
+  if ($simpletest_conf_path = _drupal_simpletest_conf_path()) {
+    $conf_path = $simpletest_conf_path;
+    return $conf_path;
+  }
+
+  // Otherwise, use the normal $conf_path.
   $script_name = $_SERVER['SCRIPT_NAME'];
   if (!$script_name) {
     $script_name = $_SERVER['SCRIPT_FILENAME'];
   }
   $http_host = $_SERVER['HTTP_HOST'];
-  $conf = find_conf_path($http_host, $script_name, $require_settings);
-  return $conf;
+  $conf_path = find_conf_path($http_host, $script_name, $require_settings);
+  return $conf_path;
+}
+
+/**
+ * Determines whether to use an overridden value for conf_path().
+ *
+ * Simpletest may provide a secondary, test-specific settings.php file to load
+ * after the primary one used by the parent site and override its variables.
+ * - If the child settings.php does not override $conf_path, then this function
+ * returns FALSE and conf_path() returns the directory of the primary
+ * settings.php.
+ * - If the child settings.php does override $conf_path, then
+ * _drupal_load_test_overrides() sets the 'simpletest_conf_path' setting, and
+ * this function returns that to conf_path(), causing installations and
+ * upgrades to act on that one.
+ *
+ * @return string|false
+ *   The overridden $conf_path, or FALSE if the $conf_path should not currently
+ *   be overridden.
+ *
+ * @see conf_path()
+ * @see _drupal_load_test_overrides()
+ */
+function _drupal_simpletest_conf_path() {
+  // Ensure that the settings object is available. conf_path() is called once
+  // before the Settings class is included, and at that point it should still
+  // load the primary $conf_path. See drupal_settings_initialize().
+  if (!class_exists('Drupal\Component\Utility\Settings', FALSE)) {
+    return FALSE;
+  }
+
+  // If no $simpletest_conf_path is set, use the normal $conf_path.
+  if (!($simpletest_conf_path = settings()->get('simpletest_conf_path'))) {
+    return FALSE;
+  }
+
+  // Ensure that this is actually a simpletest request. We can't check this
+  // before settings.php is loaded.
+  if (!drupal_valid_test_ua()) {
+    return FALSE;
+  }
+
+  // When the $simpletest_conf_path is set in a valid test request,
+  // return that path.
+  return $simpletest_conf_path;
 }
 
 /**
@@ -517,11 +526,7 @@ function find_conf_path($http_host, $script_name, $require_settings = TRUE) {
 function config_get_config_directory($type = CONFIG_ACTIVE_DIRECTORY) {
   global $config_directories;
 
-  if ($test_prefix = drupal_valid_test_ua()) {
-    // @see Drupal\simpletest\WebTestBase::setUp()
-    $path = conf_path() . '/files/simpletest/' . substr($test_prefix, 10) . '/config_' . $type;
-  }
-  elseif (!empty($config_directories[$type])) {
+  if (!empty($config_directories[$type])) {
     // Allow a configuration directory path to be outside of webroot.
     if (empty($config_directories[$type]['absolute'])) {
       $path = conf_path() . '/files/' . $config_directories[$type]['path'];
@@ -555,9 +560,10 @@ function config_get_config_directory($type = CONFIG_ACTIVE_DIRECTORY) {
  * return the expected values.
  *
  * Most other parameters do not need to be passed in, but may be necessary in
- * some cases; for example, if Drupal's ip_address() function needs to return
- * anything but the standard localhost value ('127.0.0.1'), the command line
- * script should pass in the desired value via the 'REMOTE_ADDR' key.
+ * some cases; for example, if Drupal::request()->getClientIP()
+ * needs to return anything but the standard localhost value ('127.0.0.1'),
+ * the command line script should pass in the desired value via the
+ * 'REMOTE_ADDR' key.
  *
  * @param $variables
  *   (optional) An associative array of variables within $_SERVER that should
@@ -568,7 +574,7 @@ function config_get_config_directory($type = CONFIG_ACTIVE_DIRECTORY) {
  *
  * @see conf_path()
  * @see request_uri()
- * @see ip_address()
+ * @see \Symfony\Component\HttpFoundation\Request::getClientIP()
  */
 function drupal_override_server_variables($variables = array()) {
   // Allow the provided URL to override any existing values in $_SERVER.
@@ -727,7 +733,7 @@ function drupal_settings_initialize() {
   global $base_url, $base_path, $base_root, $script_path;
 
   // Export these settings.php variables to the global namespace.
-  global $databases, $cookie_domain, $conf, $installed_profile, $db_prefix, $drupal_hash_salt, $is_https, $base_secure_url, $base_insecure_url, $config_directories;
+  global $databases, $cookie_domain, $conf, $db_prefix, $drupal_hash_salt, $is_https, $base_secure_url, $base_insecure_url, $config_directories;
   $conf = array();
 
   // Make conf_path() available as local variable in settings.php.
@@ -1554,75 +1560,23 @@ function t($string, array $args = array(), array $options = array()) {
 /**
  * Formats a string for HTML display by replacing variable placeholders.
  *
- * This function replaces variable placeholders in a string with the requested
- * values and escapes the values so they can be safely displayed as HTML. It
- * should be used on any unknown text that is intended to be printed to an HTML
- * page (especially text that may have come from untrusted users, since in that
- * case it prevents cross-site scripting and other security problems).
- *
- * In most cases, you should use t() rather than calling this function
- * directly, since it will translate the text (on non-English-only sites) in
- * addition to formatting it.
- *
- * @param $string
- *   A string containing placeholders.
- * @param $args
- *   An associative array of replacements to make. Occurrences in $string of
- *   any key in $args are replaced with the corresponding value, after optional
- *   sanitization and formatting. The type of sanitization and formatting
- *   depends on the first character of the key:
- *   - @variable: Escaped to HTML using check_plain(). Use this as the default
- *     choice for anything displayed on a page on the site.
- *   - %variable: Escaped to HTML and formatted using drupal_placeholder(),
- *     which makes it display as <em>emphasized</em> text.
- *   - !variable: Inserted as is, with no sanitization or formatting. Only use
- *     this for text that has already been prepared for HTML display (for
- *     example, user-supplied text that has already been run through
- *     check_plain() previously, or is expected to contain some limited HTML
- *     tags and has already been run through filter_xss() previously).
- *
+ * @see \Drupal\Component\Utility\String::format()
  * @see t()
  * @ingroup sanitization
  */
 function format_string($string, array $args = array()) {
-  // Transform arguments before inserting them.
-  foreach ($args as $key => $value) {
-    switch ($key[0]) {
-      case '@':
-        // Escaped only.
-        $args[$key] = check_plain($value);
-        break;
-
-      case '%':
-      default:
-        // Escaped and placeholder.
-        $args[$key] = drupal_placeholder($value);
-        break;
-
-      case '!':
-        // Pass-through.
-    }
-  }
-  return strtr($string, $args);
+  return String::format($string, $args);
 }
 
 /**
  * Encodes special characters in a plain-text string for display as HTML.
  *
- * Also validates strings as UTF-8.
- *
- * @param $text
- *   The text to be checked or processed.
- *
- * @return
- *   An HTML safe version of $text, or an empty string if $text is not
- *   valid UTF-8.
- *
+ * @see \Drupal\Component\Utility\String::checkPlain()
  * @see drupal_validate_utf8()
  * @ingroup sanitization
  */
 function check_plain($text) {
-  return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+  return String::checkPlain($text);
 }
 
 /**
@@ -1786,7 +1740,7 @@ function watchdog($type, $message, array $variables = NULL, $severity = WATCHDOG
       'uid'         => $user_uid,
       'request_uri' => $base_root . request_uri(),
       'referer'     => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '',
-      'ip'          => ip_address(),
+      'ip'          => Drupal::request()->getClientIP(),
       // Request time isn't accurate for long processes, use time() instead.
       'timestamp'   => time(),
     );
@@ -2050,7 +2004,7 @@ function drupal_hash_base64($data) {
 function drupal_anonymous_user() {
   $values = array(
     'uid' => 0,
-    'hostname' => ip_address(),
+    'hostname' => Drupal::request()->getClientIP(),
     'roles' => array(
       DRUPAL_ANONYMOUS_RID => DRUPAL_ANONYMOUS_RID,
     ),
@@ -2229,6 +2183,19 @@ function drupal_get_user_timezone() {
 }
 
 /**
+ * Gets a salt useful for hardening against SQL injection.
+ *
+ * @return
+ *   A salt based on information in settings.php, not in the database.
+ */
+function drupal_get_hash_salt() {
+  global $drupal_hash_salt, $databases;
+  // If the $drupal_hash_salt variable is empty, a hash of the serialized
+  // database credentials is used as a fallback salt.
+  return empty($drupal_hash_salt) ? hash('sha256', serialize($databases)) : $drupal_hash_salt;
+}
+
+/**
  * Provides custom PHP error handling.
  *
  * @param $error_level
@@ -2281,8 +2248,6 @@ function _drupal_exception_handler($exception) {
  */
 function _drupal_bootstrap_configuration() {
   drupal_environment_initialize();
-  // Start a page timer:
-  timer_start('page');
   // Initialize the configuration, including variables from settings.php.
   drupal_settings_initialize();
 
@@ -2291,6 +2256,9 @@ function _drupal_bootstrap_configuration() {
 
   // Activate the class loader.
   drupal_classloader();
+
+  // Start a page timer:
+  Timer::start('page');
 
   // Load the procedural configuration system helper functions.
   require_once DRUPAL_ROOT . '/core/includes/config.inc';
@@ -2586,7 +2554,6 @@ function typed_data() {
  *   HMAC and timestamp.
  */
 function drupal_valid_test_ua($new_prefix = NULL) {
-  global $drupal_hash_salt;
   static $test_prefix;
 
   if (isset($new_prefix)) {
@@ -2602,12 +2569,13 @@ function drupal_valid_test_ua($new_prefix = NULL) {
     // We use the salt from settings.php to make the HMAC key, since
     // the database is not yet initialized and we can't access any Drupal variables.
     // The file properties add more entropy not easily accessible to others.
-    $key = $drupal_hash_salt . filectime(__FILE__) . fileinode(__FILE__);
+    $key = drupal_get_hash_salt() . filectime(__FILE__) . fileinode(__FILE__);
     $time_diff = REQUEST_TIME - $time;
     // Since we are making a local request a 5 second time window is allowed,
     // and the HMAC must match.
     if ($time_diff >= 0 && $time_diff <= 5 && $hmac == drupal_hmac_base64($check_string, $key)) {
       $test_prefix = $prefix;
+      _drupal_load_test_overrides($test_prefix);
       return $test_prefix;
     }
   }
@@ -2617,17 +2585,53 @@ function drupal_valid_test_ua($new_prefix = NULL) {
 }
 
 /**
+ * Overrides low-level and environment-specific configuration.
+ *
+ * Very strictly for internal use only.
+ *
+ * Loads settings.php from the simpletest public files directory. These files
+ * can change the global $conf, the global $config_directories, the return
+ * value of conf_path(), and settings().
+ *
+ * @param string $test_prefix
+ *   The simpletest prefix.
+ */
+function _drupal_load_test_overrides($test_prefix) {
+  global $conf, $config_directories;
+
+  // Do not use the parent site's config directories. Use only the child site's.
+  // @see Drupal\simpletest\TestBase::prepareConfigDirectories()
+  $path_prefix = 'simpletest/' . substr($test_prefix, 10);
+  $config_directories = array();
+  foreach (array(CONFIG_ACTIVE_DIRECTORY, CONFIG_STAGING_DIRECTORY) as $type) {
+    $config_directories[$type] = array('path' => $path_prefix . '/config_' . $type);
+  }
+
+  // Check for and load a settings.php file in the simpletest files directory.
+  $filename = conf_path() . '/files/' . $path_prefix . '/settings.php';
+  if (file_exists($filename)) {
+    $settings = settings()->getAll();
+    $conf_path = &drupal_static('conf_path');
+    // This can override $conf, $conf_path, $settings, and $config_directories.
+    include $filename;
+    // Keep the overriden $conf_path alive across drupal_static_reset() calls.
+    // @see conf_path()
+    $settings['simpletest_conf_path'] = $conf_path;
+    new Settings($settings);
+  }
+}
+
+/**
  * Generates a user agent string with a HMAC and timestamp for simpletest.
  */
 function drupal_generate_test_ua($prefix) {
-  global $drupal_hash_salt;
   static $key;
 
   if (!isset($key)) {
     // We use the salt from settings.php to make the HMAC key, since
     // the database is not yet initialized and we can't access any Drupal variables.
     // The file properties add more entropy not easily accessible to others.
-    $key = $drupal_hash_salt . filectime(__FILE__) . fileinode(__FILE__);
+    $key = drupal_get_hash_salt() . filectime(__FILE__) . fileinode(__FILE__);
   }
   // Generate a moderately secure HMAC based on the database credentials.
   $salt = uniqid('', TRUE);
@@ -3061,52 +3065,6 @@ function arg($index = NULL, $path = NULL) {
 }
 
 /**
- * Returns the IP address of the client machine.
- *
- * If Drupal is behind a reverse proxy, we use the X-Forwarded-For header
- * instead of $_SERVER['REMOTE_ADDR'], which would be the IP address of
- * the proxy server, and not the client's. The actual header name can be
- * configured by the reverse_proxy_header variable.
- *
- * @return
- *   IP address of client machine, adjusted for reverse proxy and/or cluster
- *   environments.
- */
-function ip_address() {
-  $ip_address = &drupal_static(__FUNCTION__);
-
-  if (!isset($ip_address)) {
-    $ip_address = $_SERVER['REMOTE_ADDR'];
-
-    if (settings()->get('reverse_proxy', 0)) {
-      $reverse_proxy_header = settings()->get('reverse_proxy_header', 'HTTP_X_FORWARDED_FOR');
-      if (!empty($_SERVER[$reverse_proxy_header])) {
-        // If an array of known reverse proxy IPs is provided, then trust
-        // the XFF header if request really comes from one of them.
-        $reverse_proxy_addresses = settings()->get('reverse_proxy_addresses', array());
-
-        // Turn XFF header into an array.
-        $forwarded = explode(',', $_SERVER[$reverse_proxy_header]);
-
-        // Trim the forwarded IPs; they may have been delimited by commas and spaces.
-        $forwarded = array_map('trim', $forwarded);
-
-        // Tack direct client IP onto end of forwarded array.
-        $forwarded[] = $ip_address;
-
-        // Eliminate all trusted IPs.
-        $untrusted = array_diff($forwarded, $reverse_proxy_addresses);
-
-        // The right-most IP is the most specific we can trust.
-        $ip_address = array_pop($untrusted);
-      }
-    }
-  }
-
-  return $ip_address;
-}
-
-/**
  * Initializes and returns the class loader.
  *
  * The class loader is responsible for lazy-loading all PSR-0 compatible
@@ -3118,78 +3076,41 @@ function ip_address() {
  *   loader class when calling drupal_classloader() from settings.php. It is
  *   ignored otherwise.
  *
- * @return Symfony\Component\ClassLoader\UniversalClassLoader
- *   A UniversalClassLoader class instance (or extension thereof).
+ * @return \Symfony\Component\ClassLoader\ClassLoader
+ *   A ClassLoader class instance (or extension thereof).
  */
 function drupal_classloader($class_loader = NULL) {
-  // By default, use the UniversalClassLoader which is best for development,
-  // as it does not break when code is moved on the file system. However, as it
-  // is slow, allow to use the APC class loader in production.
+  // By default, use the ClassLoader which is best for development, as it does
+  // not break when code is moved on the file system. However, as it is slow,
+  // allow to use the APC class loader in production.
   static $loader;
 
   if (!isset($loader)) {
 
     // Include the Symfony ClassLoader for loading PSR-0-compatible classes.
-    require_once DRUPAL_ROOT . '/core/vendor/symfony/class-loader/Symfony/Component/ClassLoader/UniversalClassLoader.php';
-    if (!isset($class_loader) && class_exists('Drupal\Component\Utility\Settings', FALSE)) {
-      $class_loader = settings()->get('class_loader');
+    require_once DRUPAL_ROOT . '/core/vendor/symfony/class-loader/Symfony/Component/ClassLoader/ClassLoader.php';
+    $loader = new ClassLoader();
+
+    // Register the class loader.
+    // When configured to use APC, the ApcClassLoader is registered instead.
+    // Note that ApcClassLoader decorates ClassLoader and only provides the
+    // findFile() method, but none of the others. The actual registry is still
+    // in ClassLoader.
+    if (!isset($class_loader)) {
+      $class_loader = settings()->get('class_loader', 'default');
+    }
+    if ($class_loader === 'apc') {
+      require_once DRUPAL_ROOT . '/core/vendor/symfony/class-loader/Symfony/Component/ClassLoader/ApcClassLoader.php';
+      $apc_loader = new ApcClassLoader('drupal.' . drupal_get_hash_salt(), $loader);
+      $apc_loader->register();
+    }
+    else {
+      $loader->register();
     }
 
-    switch ($class_loader) {
-      case 'apc':
-        if (function_exists('apc_store')) {
-          require_once DRUPAL_ROOT . '/core/vendor/symfony/class-loader/Symfony/Component/ClassLoader/ApcUniversalClassLoader.php';
-          $loader = new ApcUniversalClassLoader('drupal.' . $GLOBALS['drupal_hash_salt']);
-          break;
-        }
-      // Fall through to the default loader if APC was not loaded, so that the
-      // site does not fail completely.
-      case 'dev':
-      case 'default':
-      default:
-        $loader = new UniversalClassLoader();
-        break;
-    }
-
-    // Register explicit namespaces for Drupal core.
-    // The majority of namespaces that need to be resolved are from Drupal core,
-    // so registering/setting them before vendor libraries saves a few
-    // additional cycles per class lookup.
-    $loader->registerNamespaces(array(
-      'Drupal\Core' => DRUPAL_ROOT . '/core/lib',
-      'Drupal\Component' => DRUPAL_ROOT . '/core/lib',
-      'Drupal\Driver' => DRUPAL_ROOT . '/drivers/lib',
-    ));
-
-    // Register namespaces and PEAR-like prefixes for vendor libraries managed
-    // by Composer. Composer combines libraries that use PHP 5.3 namespaces and
-    // ones that use PEAR-like class prefixes in a single array, but the Symfony
-    // class loader requires them to be registered separately.
+    // Register namespaces for vendor libraries managed by Composer.
     $prefixes_and_namespaces = require DRUPAL_ROOT . '/core/vendor/composer/autoload_namespaces.php';
-    $prefixes = array();
-    $namespaces = array();
-    foreach ($prefixes_and_namespaces as $key => $path) {
-      // If the key:
-      // - Contains a namespace separator, we know it's a namespace.
-      // - Doesn't contain a namespace separator and ends in an "_" (e.g.,
-      //   "Twig_"), it's likely intended as a PEAR-like prefix rather than a
-      //   namespace.
-      // - Doesn't contain a namespace separator or end in an "_" (e.g.,
-      //   "Assetic"), then it could be either a namespace or an incomplete
-      //   PEAR-like prefix, but we assume the former, since the only example of
-      //   that currently in Drupal is Assetic.
-      // @todo Switch to a class loader that doesn't require this guessing:
-      //   http://drupal.org/node/1658720.
-      $is_namespace = (strpos($key, '\\') !== FALSE) && (substr($key, -1) !== '_');
-      if ($is_namespace) {
-        $namespaces[rtrim($key, '\\')] = $path;
-      }
-      else {
-        $prefixes[$key] = $path;
-      }
-    }
-    $loader->registerPrefixes($prefixes);
-    $loader->registerNamespaces($namespaces);
+    $loader->addPrefixes($prefixes_and_namespaces);
 
     // Register the loader with PHP.
     $loader->register();
@@ -3207,7 +3128,7 @@ function drupal_classloader($class_loader = NULL) {
  */
 function drupal_classloader_register($name, $path) {
   $loader = drupal_classloader();
-  $loader->registerNamespace('Drupal\\' . $name, DRUPAL_ROOT . '/' . $path . '/lib');
+  $loader->addPrefix('Drupal\\' . $name, DRUPAL_ROOT . '/' . $path . '/lib');
 }
 
 /**
@@ -3381,16 +3302,10 @@ function drupal_is_cli() {
 /**
  * Formats text for emphasized display in a placeholder inside a sentence.
  *
- * Used automatically by format_string().
- *
- * @param $text
- *   The text to format (plain-text).
- *
- * @return
- *   The formatted text (html).
+ * @see \Drupal\Component\Utility\String::placeholder()
  */
 function drupal_placeholder($text) {
-  return '<em class="placeholder">' . check_plain($text) . '</em>';
+  return String::placeholder($text);
 }
 
 /**

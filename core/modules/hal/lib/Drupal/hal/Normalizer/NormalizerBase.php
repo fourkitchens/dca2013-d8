@@ -7,12 +7,14 @@
 
 namespace Drupal\hal\Normalizer;
 
+use Drupal\serialization\EntityResolver\EntityResolverInterface;
 use Drupal\serialization\Normalizer\NormalizerBase as SerializationNormalizerBase;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Base class for Normalizers.
  */
-abstract class NormalizerBase extends SerializationNormalizerBase {
+abstract class NormalizerBase extends SerializationNormalizerBase implements DenormalizerInterface {
 
   /**
    * The formats that the Normalizer can handle.
@@ -20,6 +22,13 @@ abstract class NormalizerBase extends SerializationNormalizerBase {
    * @var array
    */
   protected $formats = array('hal_json');
+
+  /**
+   * The entity resolver.
+   *
+   * @var \Drupal\serialization\EntityResolver\EntityResolverInterface
+   */
+  protected $entityResolver;
 
   /**
    * The hypermedia link manager.
@@ -36,6 +45,22 @@ abstract class NormalizerBase extends SerializationNormalizerBase {
   }
 
   /**
+   * Implements \Symfony\Component\Serializer\Normalizer\DenormalizerInterface::supportsDenormalization()
+   */
+  public function supportsDenormalization($data, $type, $format = NULL) {
+    if (in_array($format, $this->formats)) {
+      $target = new \ReflectionClass($type);
+      $supported = new \ReflectionClass($this->supportedInterfaceOrClass);
+      if ($supported->isInterface()) {
+        return $target->implementsInterface($this->supportedInterfaceOrClass);
+      }
+      else {
+        return ($target->getName() == $this->supportedInterfaceOrClass || $target->isSubclassOf($this->supportedInterfaceOrClass));
+      }
+    }
+  }
+
+  /**
    * Sets the link manager.
    *
    * The link manager determines the hypermedia type and relation links which
@@ -45,6 +70,17 @@ abstract class NormalizerBase extends SerializationNormalizerBase {
    */
   public function setLinkManager($link_manager) {
     $this->linkManager = $link_manager;
+  }
+
+  /**
+   * Sets the entity resolver.
+   *
+   * The entity resolver is used to
+   *
+   * @param \Drupal\serialization\EntityResolver\EntityResolverInterface $entity_resolver
+   */
+  public function setEntityResolver(EntityResolverInterface $entity_resolver) {
+    $this->entityResolver = $entity_resolver;
   }
 
 }

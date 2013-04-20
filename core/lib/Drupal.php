@@ -122,6 +122,32 @@ class Drupal {
   }
 
   /**
+   * Retrieves the currently active request object.
+   *
+   * Note: The use of this wrapper in particular is especially discourged. Most
+   * code should not need to access the request directly.  Doing so means it
+   * will only function when handling an HTTP request, and will require special
+   * modification or wrapping when run from a command line tool, from certain
+   * queue processors, or from automated tests.
+   *
+   * If code must access the request, it is considerably better to register
+   * an object with the Service Container and give it a setRequest() method
+   * that is configured to run when the service is created.  That way, the
+   * correct request object can always be provided by the container and the
+   * service can still be unit tested.
+   *
+   * If this method must be used, never save the request object that is
+   * returned.  Doing so may lead to inconsistencies as the request object is
+   * volatile and may change at various times, such as during a subrequest.
+   *
+   * @return \Symfony\Component\HttpFoundation\Request
+   *   The currently active request object.
+   */
+  public static function request() {
+    return static::$container->get('request');
+  }
+
+  /**
    * Returns the current primary database.
    *
    * @return \Drupal\Core\Database\Connection
@@ -132,12 +158,197 @@ class Drupal {
   }
 
   /**
+   * Returns the requested cache bin.
+   *
+   * @param string $bin
+   *   (optional) The cache bin for which the cache object should be returned,
+   *   defaults to 'cache'.
+   *
+   * @return \Drupal\Core\Cache\CacheBackendInterface
+   *   The cache object associated with the specified bin.
+   */
+  public static function cache($bin = 'cache') {
+    return static::$container->get('cache.' . $bin);
+  }
+
+  /**
+   * Returns an expirable key value store collection.
+   *
+   * @param string $collection
+   *   The name of the collection holding key and value pairs.
+   *
+   * @return \Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface
+   *   An expirable key value store collection.
+   */
+  public static function keyValueExpirable($collection) {
+    return static::$container->get('keyvalue.expirable')->get($collection);
+  }
+
+  /**
    * Returns the locking layer instance.
    *
    * @return \Drupal\Core\Lock\LockBackendInterface
    */
   public static function lock() {
     return static::$container->get('lock');
+  }
+
+  /**
+   * Retrieves a configuration object.
+   *
+   * This is the main entry point to the configuration API. Calling
+   * @code Drupal::config('book.admin') @endcode will return a configuration
+   * object in which the book module can store its administrative settings.
+   *
+   * @param string $name
+   *   The name of the configuration object to retrieve. The name corresponds to
+   *   a configuration file. For @code config('book.admin') @endcode, the config
+   *   object returned will contain the contents of book.admin configuration file.
+   *
+   * @return \Drupal\Core\Config\Config
+   *   A configuration object.
+   */
+  public static function config($name) {
+    return static::$container->get('config.factory')->get($name);
+  }
+
+  /**
+   * Returns a queue for the given queue name.
+   *
+   * The following variables can be set by variable_set or $conf overrides:
+   * - queue_class_$name: The class to be used for the queue $name.
+   * - queue_default_class: The class to use when queue_class_$name is not
+   *   defined. Defaults to \Drupal\Core\Queue\System, a reliable backend using
+   *   SQL.
+   * - queue_default_reliable_class: The class to use when queue_class_$name is
+   *   not defined and the queue_default_class is not reliable. Defaults to
+   *   \Drupal\Core\Queue\System.
+   *
+   * @param string $name
+   *   The name of the queue to work with.
+   * @param bool $reliable
+   *   (optional) TRUE if the ordering of items and guaranteeing every item
+   *   executes at least once is important, FALSE if scalability is the main
+   *   concern. Defaults to FALSE.
+   *
+   * @return \Drupal\Core\Queue\QueueInterface
+   *   The queue object for a given name.
+   */
+  public static function queue($name, $reliable = FALSE) {
+    return static::$container->get('queue')->get($name, $reliable);
+  }
+
+  /**
+   * Returns a key/value storage collection.
+   *
+   * @param $collection
+   *   Name of the key/value collection to return.
+   *
+   * @return \Drupal\Core\KeyValueStore\KeyValueStoreInterface
+   */
+  public static function keyValue($collection) {
+    return static::$container->get('keyvalue')->get($collection);
+  }
+
+  /**
+   * Returns the state storage service.
+   *
+   * Use this to store machine-generated data, local to a specific environment
+   * that does not need deploying and does not need human editing; for example,
+   * the last time cron was run. Data which needs to be edited by humans and
+   * needs to be the same across development, production, etc. environments
+   * (for example, the system maintenance message) should use config() instead.
+   *
+   * @return \Drupal\Core\KeyValueStore\KeyValueStoreInterface
+   */
+  public static function state() {
+    return static::$container->get('state');
+  }
+
+  /**
+   * Returns the default http client.
+   *
+   * @return \Guzzle\Http\ClientInterface
+   *   A guzzle http client instance.
+   */
+  public static function httpClient() {
+    return static::$container->get('http_default_client');
+  }
+
+  /**
+   * Returns the entity query object for this entity type.
+   *
+   * @param string $entity_type
+   *   The entity type, e.g. node, for which the query object should be
+   *   returned.
+   * @param string $conjunction
+   *   AND if all conditions in the query need to apply, OR if any of them is
+   *   enough. Optional, defaults to AND.
+   *
+   * @return \Drupal\Core\Entity\Query\QueryInterface
+   *   The query object that can query the given entity type.
+   */
+  public static function entityQuery($entity_type, $conjunction = 'AND') {
+    return static::$container->get('entity.query')->get($entity_type, $conjunction);
+  }
+
+  /**
+   * Returns the entity query aggregate object for this entity type.
+   *
+   * @param $entity_type
+   *   The entity type, e.g. node, for which the query object should be
+   *   returned.
+   * @param $conjunction
+   *   AND if all conditions in the query need to apply, OR if any of them is
+   *   enough. Optional, defaults to AND.
+   *
+   * @return \Drupal\Core\Entity\Query\QueryInterface
+   *   The query object that can query the given entity type.
+   */
+  public static function entityQueryAggregate($entity_type, $conjunction = 'AND') {
+    return static::$container->get('entity.query')->getAggregate($entity_type, $conjunction);
+  }
+
+  /**
+   * Returns the flood instance.
+   *
+   * @return \Drupal\Core\Flood\FloodInterface
+   */
+  public static function flood() {
+    return static::$container->get('flood');
+  }
+
+  /**
+   * Returns the module handler.
+   *
+   * @return \Drupal\Core\Extension\ModuleHandler
+   */
+  public static function moduleHandler() {
+    return static::$container->get('module_handler');
+  }
+
+  /**
+   * Returns the typed data manager service.
+   *
+   * Use the typed data manager service for creating typed data objects.
+   *
+   * @return \Drupal\Core\TypedData\TypedDataManager
+   *   The typed data manager.
+   *
+   * @see \Drupal\Core\TypedData\TypedDataManager::create()
+   */
+  public static function typedData() {
+    return static::$container->get('typed_data');
+  }
+
+  /**
+   * Returns the token service.
+   *
+   * @return \Drupal\Core\Utility\Token
+   *   The token service.
+   */
+  public static function token() {
+    return static::$container->get('token');
   }
 
 }

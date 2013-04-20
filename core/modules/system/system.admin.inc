@@ -5,6 +5,8 @@
  * Admin page callbacks for the system module.
  */
 
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\ReplaceCommand;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -21,7 +23,7 @@ function system_admin_config_page() {
   $blocks = array();
   if ($system_link = entity_load_multiple_by_properties('menu_link', array('link_path' => 'admin/config', 'module' => 'system'))) {
     $system_link = reset($system_link);
-    $query = entity_query('menu_link')
+    $query = Drupal::entityQuery('menu_link')
       ->condition('link_path', 'admin/help', '<>')
       ->condition('menu_name', $system_link->menu_name)
       ->condition('plid', $system_link->id())
@@ -617,7 +619,7 @@ function system_theme_settings_validate($form, &$form_state) {
     $validators = array('file_validate_is_image' => array());
 
     // Check for a new uploaded logo.
-    $file = file_save_upload('logo_upload', $validators);
+    $file = file_save_upload('logo_upload', $validators, FALSE, 0);
     if (isset($file)) {
       // File upload was attempted.
       if ($file) {
@@ -633,7 +635,7 @@ function system_theme_settings_validate($form, &$form_state) {
     $validators = array('file_validate_extensions' => array('ico png gif jpg jpeg apng svg'));
 
     // Check for a new uploaded favicon.
-    $file = file_save_upload('favicon_upload', $validators);
+    $file = file_save_upload('favicon_upload', $validators, FALSE, 0);
     if (isset($file)) {
       // File upload was attempted.
       if ($file) {
@@ -1830,39 +1832,65 @@ function system_file_system_settings_submit($form, &$form_state) {
  * Form builder; Configure site image toolkit usage.
  *
  * @ingroup forms
- * @see system_settings_form()
+ * @see system_image_toolkit_settings_submit()
  */
-function system_image_toolkit_settings() {
-  $toolkits_available = image_get_available_toolkits();
-  $current_toolkit = image_get_toolkit();
+function system_image_toolkit_settings($form, &$form_state) {
+  $manager = Drupal::service('image.toolkit.manager');
+  $toolkits_available = $manager->getAvailableToolkits();
+  $current_toolkit = config('system.image')->get('toolkit');
 
-  if (count($toolkits_available) == 0) {
-    variable_del('image_toolkit');
-    $form['image_toolkit_help'] = array(
-      '#markup' => t("No image toolkits were detected. Drupal includes support for <a href='!gd-link'>PHP's built-in image processing functions</a> but they were not detected on this system. You should consult your system administrator to have them enabled, or try using a third party toolkit.", array('gd-link' => url('http://php.net/gd'))),
-    );
-    return $form;
-  }
+  // If we have available toolkits allow the user to select the image toolkit to
+  // use and load the settings forms.
+  if (count($toolkits_available)) {
+    $options = array();
+    foreach($toolkits_available as $id => $definition) {
+      $options[$id] = $definition['title'];
+    }
 
-  if (count($toolkits_available) > 1) {
     $form['image_toolkit'] = array(
       '#type' => 'radios',
       '#title' => t('Select an image processing toolkit'),
-      '#default_value' => variable_get('image_toolkit', $current_toolkit),
-      '#options' => $toolkits_available
+      '#default_value' => $current_toolkit,
+      '#options' => $options,
     );
+
+    // Get the toolkit settings forms.
+    foreach ($toolkits_available as $id => $definition) {
+      $toolkit = $manager->createInstance($id);
+      $form['image_toolkit_settings'][$id] = array(
+        '#type' => 'fieldset',
+        '#title' => t('@toolkit settings', array('@toolkit' => $definition['title'])),
+        '#collapsible' => TRUE,
+        '#collapsed' => ($id == $current_toolkit) ? FALSE : TRUE,
+        '#tree' => TRUE,
+      );
+      $form['image_toolkit_settings'][$id] += $toolkit->settingsForm();
+    }
+
+    $form = system_config_form($form, $form_state);
   }
   else {
-    variable_set('image_toolkit', key($toolkits_available));
+    form_set_error('image_toolkit', t('There are no image toolkits available. Drupal comes with support for PHP\'s GD image toolkit. This requires that the GD module for PHP be installed and configured properly. For more information see <a href="@url">PHP\'s image documentation</a>.', array('@url' => 'http://php.net/image')));
   }
 
-  // Get the toolkit's settings form.
-  $function = 'image_' . $current_toolkit . '_settings';
-  if (function_exists($function)) {
-    $form['image_toolkit_settings'] = $function();
-  }
+  return $form;
+}
 
-  return system_settings_form($form);
+/**
+ * Form submission handler for system_image_toolkit_settings().
+ */
+function system_image_toolkit_settings_submit($form, &$form_state) {
+  config('system.image')
+    ->set('toolkit', $form_state['values']['image_toolkit'])
+    ->save();
+
+  // Call the form submit handler for each of the toolkits.
+  // Get the toolkit settings forms.
+  $manager = Drupal::service('image.toolkit.manager');
+  foreach ($manager->getAvailableToolkits() as $id => $definition) {
+    $toolkit = $manager->createInstance($id);
+    $toolkit->settingsFormSubmit($form, $form_state);
+  }
 }
 
 /**
@@ -2398,7 +2426,7 @@ function theme_system_modules_details($variables) {
     $row[] = array('class' => array('checkbox'), 'data' => drupal_render($module['enable']));
 
     // Add the module label and expand/collapse functionalty.
-    $col2 = '<label id="' . $key . '" for="' . $module['enable']['#id'] . '" class="module-name table-filter-text-source">' . drupal_render($module['name']) . '</label>';
+    $col2 = '<label id="module-' . $key . '" for="' . $module['enable']['#id'] . '" class="module-name table-filter-text-source">' . drupal_render($module['name']) . '</label>';
     $row[] = array('class' => array('module'), 'data' => $col2);
 
     // Add the description, along with any modules it requires.
@@ -2893,8 +2921,9 @@ function system_date_time_lookup($form, &$form_state) {
   // Return a command instead of a string, since the Ajax framework
   // automatically prepends an additional empty DIV element for a string, which
   // breaks the layout.
-  $commands[] = ajax_command_replace('#edit-date-format-suffix', '<small id="edit-date-format-suffix">' . $format . '</small>');
-  return array('#type' => 'ajax', '#commands' => $commands);
+  $response = new AjaxResponse();
+  $response->addCommand(new ReplaceCommand('#edit-date-format-suffix', '<small id="edit-date-format-suffix">' . $format . '</small>'));
+  return $response;
 }
 
 /**

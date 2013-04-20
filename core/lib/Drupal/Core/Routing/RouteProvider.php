@@ -97,7 +97,11 @@ class RouteProvider implements RouteProviderInterface {
       $path = rtrim($request->getPathInfo(), '/');
     }
 
-    $parts = array_slice(array_filter(explode('/', $path)), 0, MatcherDumper::MAX_PARTS);
+    // Filter out each empty value, though allow '0' and 0, which would be
+    // filtered out by empty().
+    $parts = array_slice(array_filter(explode('/', $path), function($value) {
+      return $value !== NULL && $value !== '';
+    }), 0, MatcherDumper::MAX_PARTS);
 
     $ancestors = $this->getCandidateOutlines($parts);
 
@@ -202,7 +206,7 @@ class RouteProvider implements RouteProviderInterface {
 
     // The highest possible mask is a 1 bit for every part of the path. We will
     // check every value down from there to generate a possible outline.
-    $masks = range($end, pow($number_parts - 1, 2));
+    $masks = range($end, 0);
 
     // Only examine patterns that actually exist as router items (the masks).
     foreach ($masks as $i) {

@@ -45,6 +45,8 @@ Drupal.behaviors.verticalTabs = {
         tab_list.append(vertical_tab.item);
         $this
           .removeClass('collapsed')
+          // prop() can't be used on browsers not supporting details element,
+          // the style won't apply to them if prop() is used.
           .attr('open', true)
           .addClass('vertical-tabs-pane')
           .data('verticalTab', vertical_tab);
@@ -85,6 +87,8 @@ Drupal.behaviors.verticalTabs = {
 Drupal.verticalTab = function (settings) {
   var self = this;
   $.extend(this, settings, Drupal.theme('verticalTab', settings));
+
+  this.link.attr('href', '#' + settings.details.attr('id'));
 
   this.link.click(function (e) {
     e.preventDefault();

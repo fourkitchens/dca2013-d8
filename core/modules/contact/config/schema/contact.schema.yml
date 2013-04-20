@@ -7,8 +7,11 @@ contact.category.*:
     id:
       type: string
       label: 'Category identifier'
-    label:
+    uuid:
       type: string
+      label: 'UUID'
+    label:
+      type: label
       label: 'Label'
     recipients:
       type: sequence
@@ -17,11 +20,17 @@ contact.category.*:
         - type: email
           label: 'E-mail address'
     reply:
-      type: string
+      type: text
       label: 'Auto-reply'
     weight:
       type: integer
       label: 'Weight'
+    status:
+      type: boolean
+      label: 'Status'
+    langcode:
+      type: string
+      label: 'Default language'
 
 contact.settings:
   type: mapping

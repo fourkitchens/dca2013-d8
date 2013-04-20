@@ -125,7 +125,7 @@ function hook_cron() {
     ':time' => REQUEST_TIME,
     ':never' => AGGREGATOR_CLEAR_NEVER,
   ));
-  $queue = queue('aggregator_feeds');
+  $queue = Drupal::queue('aggregator_feeds');
   foreach ($result as $feed) {
     $queue->createItem($feed);
   }
@@ -1360,44 +1360,6 @@ function hook_init() {
 }
 
 /**
- * Define image toolkits provided by this module.
- *
- * The file which includes each toolkit's functions must be declared as part of
- * the files array in the module .info.yml file so that the registry will find
- * and parse it.
- *
- * The toolkit's functions must be named image_toolkitname_operation().
- * where the operation may be:
- *   - 'load': Required. See image_gd_load() for usage.
- *   - 'save': Required. See image_gd_save() for usage.
- *   - 'settings': Optional. See image_gd_settings() for usage.
- *   - 'resize': Optional. See image_gd_resize() for usage.
- *   - 'rotate': Optional. See image_gd_rotate() for usage.
- *   - 'crop': Optional. See image_gd_crop() for usage.
- *   - 'desaturate': Optional. See image_gd_desaturate() for usage.
- *
- * @return
- *   An array with the toolkit name as keys and sub-arrays with these keys:
- *     - 'title': A string with the toolkit's title.
- *     - 'available': A Boolean value to indicate that the toolkit is operating
- *       properly, e.g. all required libraries exist.
- *
- * @see system_image_toolkits()
- */
-function hook_image_toolkits() {
-  return array(
-    'working' => array(
-      'title' => t('A toolkit that works.'),
-      'available' => TRUE,
-    ),
-    'broken' => array(
-      'title' => t('A toolkit that is "broken" and will not be listed.'),
-      'available' => FALSE,
-    ),
-  );
-}
-
-/**
  * Alter an email message created with the drupal_mail() function.
  *
  * hook_mail_alter() allows modification of email messages created and sent
@@ -1986,14 +1948,13 @@ function hook_mail($key, &$message, $params) {
  * This hook is invoked by drupal_flush_all_caches(). It runs before module data
  * is updated and before hook_rebuild().
  *
- * @return array
- *   An array of cache bins to be flushed.
- *
  * @see drupal_flush_all_caches()
  * @see hook_rebuild()
  */
 function hook_cache_flush() {
-  return array('example');
+  if (defined('MAINTENANCE_MODE') && MAINTENANCE_MODE == 'update') {
+    _update_cache_clear();
+  }
 }
 
 /**
@@ -2353,8 +2314,9 @@ function hook_file_url_alter(&$uri) {
  *     status report page.
  *
  * @return
- *   A keyed array of requirements. Each requirement is itself an array with
- *   the following items:
+ *   An associative array where the keys are arbitrary but must be unique (it
+ *   is suggested to use the module short name as a prefix) and the values are
+ *   themselves associative arrays with the following elements:
  *   - title: The name of the requirement.
  *   - value: The current value (e.g., version, time, level, etc). During
  *     install phase, this should only be used for version numbers, do not set
@@ -2512,6 +2474,8 @@ function hook_schema() {
  *
  * @param $schema
  *   Nested array describing the schemas for all modules.
+ *
+ * @ingroup schemaapi
  */
 function hook_schema_alter(&$schema) {
   // Add field to existing schema.
@@ -3135,33 +3099,6 @@ function hook_file_mimetype_mapping_alter(&$mapping) {
 }
 
 /**
- * Declare archivers to the system.
- *
- * An archiver is a class that is able to package and unpackage one or more files
- * into a single possibly compressed file.  Common examples of such files are
- * zip files and tar.gz files.  All archiver classes must implement
- * ArchiverInterface.
- *
- * Each entry should be keyed on a unique value, and specify three
- * additional keys:
- * - class: The name of the PHP class for this archiver.
- * - extensions: An array of file extensions that this archiver supports.
- * - weight: This optional key specifies the weight of this archiver.
- *   When mapping file extensions to archivers, the first archiver by
- *   weight found that supports the requested extension will be used.
- *
- * @see hook_archiver_info_alter()
- */
-function hook_archiver_info() {
-  return array(
-    'tar' => array(
-      'class' => 'Drupal\Component\Archiver\Tar',
-      'extensions' => array('tar', 'tar.gz', 'tar.bz2'),
-    ),
-  );
-}
-
-/**
  * Alter archiver information declared by other modules.
  *
  * See hook_archiver_info() for a description of archivers and the archiver
@@ -3229,11 +3166,12 @@ function hook_url_outbound_alter(&$path, &$options, $original_path) {
 /**
  * Provide replacement values for placeholder tokens.
  *
- * This hook is invoked when someone calls token_replace(). That function first
- * scans the text for [type:token] patterns, and splits the needed tokens into
- * groups by type. Then hook_tokens() is invoked on each token-type group,
- * allowing your module to respond by providing replacement text for any of
- * the tokens in the group that your module knows how to process.
+ * This hook is invoked when someone calls
+ * \Drupal\Core\Utility\Token::replace(). That function first scans the text for
+ * [type:token] patterns, and splits the needed tokens into groups by type.
+ * Then hook_tokens() is invoked on each token-type group, allowing your module
+ * to respond by providing replacement text for any of the tokens in the group
+ * that your module knows how to process.
  *
  * A module implementing this hook should also implement hook_token_info() in
  * order to list its available tokens on editing screens.
@@ -3248,10 +3186,11 @@ function hook_url_outbound_alter(&$path, &$options, $original_path) {
  *   original text.
  * @param $data
  *   (optional) An associative array of data objects to be used when generating
- *   replacement values, as supplied in the $data parameter to token_replace().
+ *   replacement values, as supplied in the $data parameter to
+ *   \Drupal\Core\Utility\Token::replace().
  * @param $options
  *   (optional) An associative array of options for token replacement; see
- *   token_replace() for possible values.
+ *   \Drupal\Core\Utility\Token::replace() for possible values.
  *
  * @return
  *   An associative array of replacement values, keyed by the raw [type:token]
@@ -3261,6 +3200,8 @@ function hook_url_outbound_alter(&$path, &$options, $original_path) {
  * @see hook_tokens_alter()
  */
 function hook_tokens($type, $tokens, array $data = array(), array $options = array()) {
+  $token_service = Drupal::token();
+
   $url_options = array('absolute' => TRUE);
   if (isset($options['langcode'])) {
     $url_options['language'] = language_load($options['langcode']);
@@ -3303,13 +3244,13 @@ function hook_tokens($type, $tokens, array $data = array(), array $options = arr
       }
     }
 
-    if ($author_tokens = token_find_with_prefix($tokens, 'author')) {
+    if ($author_tokens = $token_service->findWithPrefix($tokens, 'author')) {
       $author = user_load($node->uid);
-      $replacements += token_generate('user', $author_tokens, array('user' => $author), $options);
+      $replacements += $token_service->generate('user', $author_tokens, array('user' => $author), $options);
     }
 
-    if ($created_tokens = token_find_with_prefix($tokens, 'created')) {
-      $replacements += token_generate('date', $created_tokens, array('date' => $node->created), $options);
+    if ($created_tokens = $token_service->findWithPrefix($tokens, 'created')) {
+      $replacements += $token_service->generate('date', $created_tokens, array('date' => $node->created), $options);
     }
   }
 
@@ -3365,9 +3306,10 @@ function hook_tokens_alter(array &$replacements, array $context) {
  * provides a list of types and tokens to be displayed on text editing screens,
  * so that people editing text can see what their token options are.
  *
- * The actual token replacement is done by token_replace(), which invokes
- * hook_tokens(). Your module will need to implement that hook in order to
- * generate token replacements from the tokens defined here.
+ * The actual token replacement is done by
+ * \Drupal\Core\Utility\Token::replace(), which invokes hook_tokens(). Your
+ * module will need to implement that hook in order to generate token
+ * replacements from the tokens defined here.
  *
  * @return
  *   An associative array of available tokens and token types. The outer array
@@ -3376,12 +3318,13 @@ function hook_tokens_alter(array &$replacements, array $context) {
  *     an associative array with the following components:
  *     - name: The translated human-readable short name of the token type.
  *     - description: A translated longer description of the token type.
- *     - needs-data: The type of data that must be provided to token_replace()
- *       in the $data argument (i.e., the key name in $data) in order for tokens
- *       of this type to be used in the $text being processed. For instance, if
- *       the token needs a node object, 'needs-data' should be 'node', and to
- *       use this token in token_replace(), the caller needs to supply a node
- *       object as $data['node']. Some token data can also be supplied
+ *     - needs-data: The type of data that must be provided to
+ *       \Drupal\Core\Utility\Token::replace() in the $data argument (i.e., the
+ *       key name in $data) in order for tokens of this type to be used in the
+ *       $text being processed. For instance, if the token needs a node object,
+ *       'needs-data' should be 'node', and to use this token in
+ *       \Drupal\Core\Utility\Token::replace(), the caller needs to supply a
+ *       node object as $data['node']. Some token data can also be supplied
  *       indirectly; for instance, a node object in $data supplies a user object
  *       (the author of the node), allowing user tokens to be used when only
  *       a node data object is supplied.
@@ -3394,8 +3337,8 @@ function hook_tokens_alter(array &$replacements, array $context) {
  *     - type (optional): A 'needs-data' data type supplied by this token, which
  *       should match a 'needs-data' value from another token type. For example,
  *       the node author token provides a user object, which can then be used
- *       for token replacement data in token_replace() without having to supply
- *       a separate user object.
+ *       for token replacement data in \Drupal\Core\Utility\Token::replace()
+ *       without having to supply a separate user object.
  *
  * @see hook_token_info_alter()
  * @see hook_tokens()

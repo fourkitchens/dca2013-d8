@@ -223,7 +223,7 @@ class Sql extends QueryPluginBase {
       '#description' => t('Disabling SQL rewriting will disable node_access checks as well as other modules that implement hook_query_alter().'),
       '#type' => 'checkbox',
       '#default_value' => !empty($this->options['disable_sql_rewrite']),
-      '#suffix' => '<div class="messages warning sql-rewrite-warning js-hide">' . t('WARNING: Disabling SQL rewriting means that node access security is disabled. This may allow users to see data they should not be able to see if your view is misconfigured. Please use this option only if you understand and accept this security risk.') . '</div>',
+      '#suffix' => '<div class="messages warning sql-rewrite-warning js-hide">' . t('WARNING: Disabling SQL rewriting means that node access security is disabled. This may allow users to see data they should not be able to see if your view is misconfigured. Use this option only if you understand and accept this security risk.') . '</div>',
     );
     $form['distinct'] = array(
       '#type' => 'checkbox',
@@ -1379,7 +1379,7 @@ class Sql extends QueryPluginBase {
     }
 
     // Add all query substitutions as metadata.
-    $query->addMetaData('views_substitutions', module_invoke_all('views_query_substitutions', $this));
+    $query->addMetaData('views_substitutions', \Drupal::moduleHandler()->invokeAll('views_query_substitutions', array($this->view)));
 
     return $query;
   }
@@ -1402,10 +1402,7 @@ class Sql extends QueryPluginBase {
    * Let modules modify the query just prior to finalizing it.
    */
   function alter(ViewExecutable $view) {
-    foreach (module_implements('views_query_alter') as $module) {
-      $function = $module . '_views_query_alter';
-      $function($view, $this);
-    }
+    \Drupal::moduleHandler()->invokeAll('views_query_alter', array($view, $this));
   }
 
   /**
@@ -1455,7 +1452,7 @@ class Sql extends QueryPluginBase {
 
     $items = array();
     if ($query) {
-      $additional_arguments = module_invoke_all('views_query_substitutions', $view);
+      $additional_arguments = \Drupal::moduleHandler()->invokeAll('views_query_substitutions', array($view));
 
       // Count queries must be run through the preExecute() method.
       // If not, then hook_query_node_access_alter() may munge the count by
@@ -1515,7 +1512,7 @@ class Sql extends QueryPluginBase {
           drupal_set_message($e->getMessage(), 'error');
         }
         else {
-          throw new DatabaseExceptionWrapper(format_string('Exception in @human_name[@view_name]: @message', array('@human_name' => $view->storage->getHumanName(), '@view_name' => $view->storage->id(), '@message' => $e->getMessage())));
+          throw new DatabaseExceptionWrapper(format_string('Exception in @label[@view_name]: @message', array('@label' => $view->storage->label(), '@view_name' => $view->storage->id(), '@message' => $e->getMessage())));
         }
       }
 

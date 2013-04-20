@@ -25,8 +25,8 @@ chdir('..');
 // The minimum version is specified explicitly, as DRUPAL_MINIMUM_PHP is not
 // yet available. It is defined in bootstrap.inc, but it is not possible to
 // load that file yet as it would cause a fatal error on older versions of PHP.
-if (version_compare(PHP_VERSION, '5.3.3') < 0) {
-  print 'Your PHP installation is too old. Drupal requires at least PHP 5.3.3. See the <a href="http://drupal.org/requirements">system requirements</a> page for more information.';
+if (version_compare(PHP_VERSION, '5.3.10') < 0) {
+  print 'Your PHP installation is too old. Drupal requires at least PHP 5.3.10. See the <a href="http://drupal.org/requirements">system requirements</a> page for more information.';
   exit;
 }
 
@@ -46,6 +46,9 @@ define('MAINTENANCE_MODE', 'update');
  * Renders a form with a list of available database updates.
  */
 function update_selection_page() {
+  // Make sure there is no stale theme registry.
+  cache()->deleteAll();
+
   drupal_set_title('Drupal database update');
   $elements = drupal_get_form('update_script_selection_form');
   $output = drupal_render($elements);
@@ -247,7 +250,7 @@ function update_results_page() {
       }
     }
     if ($all_messages) {
-      $output .= '<div id="update-results"><h2>The following updates returned messages</h2>';
+      $output .= '<div class="update-results"><h2>The following updates returned messages</h2>';
       $output .= $all_messages;
       $output .= '</div>';
     }
@@ -271,9 +274,8 @@ function update_info_page() {
   // Change query-strings on css/js files to enforce reload for all users.
   _drupal_flush_css_js();
   // Flush the cache of all data for the update status module.
-  if (db_table_exists('cache_update')) {
-    cache('update')->deleteAll();
-  }
+  drupal_container()->get('keyvalue.expirable')->get('update')->deleteAll();
+  drupal_container()->get('keyvalue.expirable')->get('update_available_release')->deleteAll();
 
   update_task_list('info');
   drupal_set_title('Drupal database update');
@@ -388,7 +390,8 @@ function update_check_requirements($skip_warnings = FALSE) {
     drupal_set_title('Requirements problem');
     $status_report = theme('status_report', array('requirements' => $requirements));
     $status_report .= 'Check the messages and <a href="' . check_url(drupal_requirements_url($severity)) . '">try again</a>.';
-    print theme('update_page', array('content' => $status_report));
+    drupal_add_http_header('Content-Type', 'text/html; charset=utf-8');
+    print theme('maintenance_page', array('content' => $status_report));
     exit();
   }
 }
@@ -531,6 +534,7 @@ if (isset($output) && $output) {
     $output->send();
   }
   else {
-    print theme('update_page', array('content' => $output, 'show_messages' => !$progress_page));
+    drupal_add_http_header('Content-Type', 'text/html; charset=utf-8');
+    print theme('maintenance_page', array('content' => $output, 'show_messages' => !$progress_page));
   }
 }

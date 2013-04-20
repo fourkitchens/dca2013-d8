@@ -7,17 +7,14 @@
 
 namespace Drupal\comment\Plugin\views\field;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Field handler to present a link node edit.
  *
  * @ingroup views_field_handlers
  *
- * @Plugin(
- *   id = "comment_link_edit",
- *   module = "comment"
- * )
+ * @PluginID("comment_link_edit")
  */
 class LinkEdit extends Link {
 
@@ -44,7 +41,7 @@ class LinkEdit extends Link {
     parent::render_link($data, $values);
     // ensure user has access to edit this comment.
     $comment = $this->get_value($values);
-    if (!comment_access('edit', $comment)) {
+    if (!$comment->access('update')) {
       return;
     }
 

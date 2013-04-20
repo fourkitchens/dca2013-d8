@@ -38,12 +38,13 @@ class TokenReplaceTest extends ViewUnitTestBase {
    * Tests core token replacements generated from a view.
    */
   function testTokenReplacement() {
+    $token_handler = \Drupal::token();
     $view = views_get_view('test_tokens');
     $view->setDisplay('page_1');
     $this->executeView($view);
 
     $expected = array(
-      '[view:name]' => 'Test tokens',
+      '[view:label]' => 'Test tokens',
       '[view:description]' => 'Test view to token replacement tests.',
       '[view:id]' => 'test_tokens',
       '[view:title]' => 'Test token page',
@@ -57,7 +58,7 @@ class TokenReplaceTest extends ViewUnitTestBase {
     );
 
     foreach ($expected as $token => $expected_output) {
-      $output = token_replace($token, array('view' => $view));
+      $output = $token_handler->replace($token, array('view' => $view));
       $this->assertIdentical($output, $expected_output, format_string('Token %token replaced correctly.', array('%token' => $token)));
     }
   }

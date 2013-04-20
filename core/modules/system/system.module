@@ -5,12 +5,16 @@
  * Configuration system that lets administrators modify the workings of the site.
  */
 
+use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Utility\ModuleInfo;
 use Drupal\Core\TypedData\Primitive;
 use Drupal\system\Plugin\block\block\SystemMenuBlock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Guzzle\Http\Exception\BadResponseException;
+use Guzzle\Http\Exception\RequestException;
 
 /**
  * Maximum age of temporary files in seconds.
@@ -495,6 +499,8 @@ function system_element_info() {
   );
   $types['file'] = array(
     '#input' => TRUE,
+    '#multiple' => FALSE,
+    '#process' => array('form_process_file'),
     '#size' => 60,
     '#pre_render' => array('form_pre_render_file'),
     '#theme' => 'input__file',
@@ -1246,6 +1252,19 @@ function system_library_info() {
     ),
   );
 
+  // Drupal's Screen Reader change announcement utility.
+  $libraries['drupal.announce'] = array(
+    'title' => 'Drupal announce',
+    'version' => VERSION,
+    'js' => array(
+      'core/misc/announce.js' => array('group' => JS_LIBRARY),
+    ),
+    'dependencies' => array(
+      array('system', 'drupal'),
+      array('system', 'drupal.debounce'),
+    ),
+  );
+
   // Drupal's batch API.
   $libraries['drupal.batch'] = array(
     'title' => 'Drupal batch API',
@@ -1397,6 +1416,37 @@ function system_library_info() {
     ),
   );
 
+  // A utility that measures and reports viewport offset dimensions from
+  // elements like the toolbar that can potentially displace the positioning of
+  // elements like the overlay.
+  $libraries['drupal.displace'] = array(
+    'title' => 'Drupal displace',
+    'version' => VERSION,
+    'js' => array(
+      'core/misc/displace.js' => array('group' => JS_LIBRARY),
+    ),
+    'dependencies' => array(
+      array('system', 'jquery'),
+      array('system', 'drupal'),
+      array('system', 'drupal.debounce'),
+    ),
+  );
+
+  // Manages tab orders in the document.
+  $libraries['drupal.tabbingmanager'] = array(
+    'title' => 'Drupal tabbing manager',
+    'version' => VERSION,
+    'js' => array(
+      'core/misc/tabbingmanager.js' => array('group', JS_LIBRARY),
+    ),
+    'dependencies' => array(
+      array('system', 'jquery'),
+      // Depends on jQuery UI Core to use the ":tabbable" pseudo selector.
+      array('system', 'jquery.ui.core'),
+      array('system', 'drupal'),
+    ),
+  );
+
   // A utility function to limit calls to a function with a given time.
   $libraries['drupal.debounce'] = array(
     'title' => 'Drupal debounce',
@@ -1414,7 +1464,7 @@ function system_library_info() {
   $libraries['jquery'] = array(
     'title' => 'jQuery',
     'website' => 'http://jquery.com',
-    'version' => '1.8.2',
+    'version' => '1.9.1',
     'js' => array(
       'core/misc/jquery.js' => array('group' => JS_LIBRARY, 'weight' => -20),
     ),
@@ -1451,7 +1501,7 @@ function system_library_info() {
   $libraries['jquery.bbq'] = array(
     'title' => 'jQuery BBQ',
     'website' => 'http://benalman.com/projects/jquery-bbq-plugin/',
-    'version' => '1.2.1',
+    'version' => '1.3pre',
     'js' => array(
       'core/misc/jquery.ba-bbq.js' => array(),
     ),
@@ -1526,8 +1576,8 @@ function system_library_info() {
   // HTML5 Shiv.
   $libraries['html5shiv'] = array(
     'title' => 'html5shiv',
-    'website' => 'http://code.google.com/p/html5shiv/',
-    'version' => '11',
+    'website' => 'https://github.com/aFarkas/html5shiv/',
+    'version' => '3.6.2',
     'js' => array(
       'core/misc/html5.js' => array(
         'group' => JS_LIBRARY,
@@ -1570,7 +1620,7 @@ function system_library_info() {
   $libraries['jquery.ui.core'] = array(
     'title' => 'jQuery UI: Core',
     'website' => 'http://jqueryui.com',
-    'version' => '1.9.0-pre',
+    'version' => '1.10.2',
     'js' => array(
       'core/misc/ui/ui/jquery.ui.core.js' => array('group' => JS_LIBRARY, 'weight' => -11),
     ),
@@ -2007,6 +2057,19 @@ function system_library_info() {
     ),
   );
 
+  // Touch Punch for jQuery UI touch support.
+  $libraries['jquery.ui.touch-punch'] = array(
+    'title' => 'jQuery UI Touch Punch',
+    'website' => 'http://jqueryui.com/demos/effect/',
+    'version' => '0.2.2',
+    'js' => array(
+      'core/misc/jquery.ui.touch-punch.js' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'jquery.ui.core'),
+    ),
+  );
+
   // Underscore.
   $libraries['underscore'] = array(
     'title' => 'Underscore.js',
@@ -2093,6 +2156,7 @@ function system_library_info() {
       array('system', 'drupal'),
       array('system', 'drupalSettings'),
       array('system', 'jquery.once'),
+      array('system', 'drupal.displace'),
     ),
   );
   $libraries['drupal.timezone'] = array(
@@ -2515,17 +2579,18 @@ function system_filetransfer_info() {
 function system_init() {
   // Ignore slave database servers for this request.
   //
-  // In Drupal's distributed database structure, new data is written to the master
-  // and then propagated to the slave servers.  This means there is a lag
-  // between when data is written to the master and when it is available on the slave.
-  // At these times, we will want to avoid using a slave server temporarily.
-  // For example, if a user posts a new node then we want to disable the slave
-  // server for that user temporarily to allow the slave server to catch up.
-  // That way, that user will see their changes immediately while for other
-  // users we still get the benefits of having a slave server, just with slightly
-  // stale data.  Code that wants to disable the slave server should use the
-  // db_set_ignore_slave() function to set $_SESSION['ignore_slave_server'] to
-  // the timestamp after which the slave can be re-enabled.
+  // In Drupal's distributed database structure, new data is written to the
+  // master and then propagated to the slave servers.  This means there is a
+  // lag between when data is written to the master and when it is available on
+  // the slave. At these times, we will want to avoid using a slave server
+  // temporarily. For example, if a user posts a new node then we want to
+  // disable the slave server for that user temporarily to allow the slave
+  // server to catch up. That way, that user will see their changes immediately
+  // while for other users we still get the benefits of having a slave server,
+  // just with slightly stale data.  Code that wants to disable the slave
+  // server should use the db_ignore_slave() function to set
+  // $_SESSION['ignore_slave_server'] to the timestamp after which the slave
+  // can be re-enabled.
   if (isset($_SESSION['ignore_slave_server'])) {
     if ($_SESSION['ignore_slave_server'] >= REQUEST_TIME) {
       Database::ignoreTarget('default', 'slave');
@@ -2541,12 +2606,12 @@ function system_init() {
  */
 function system_page_build(&$page) {
   $path = drupal_get_path('module', 'system');
-  // Use the CSS_SYSTEM group to load these early.
-  $page['#attached']['css'][$path . '/system.base.css'] = array('group' => CSS_SYSTEM, 'every_page' => TRUE);
+  // Use the CSS_AGGREGATE_SYSTEM group to load these early.
+  $page['#attached']['css'][$path . '/system.base.css'] = array('group' => CSS_AGGREGATE_SYSTEM, 'every_page' => TRUE);
   if (path_is_admin(current_path())) {
-    $page['#attached']['css'][$path . '/system.admin.css'] = array('group' => CSS_SYSTEM);
+    $page['#attached']['css'][$path . '/system.admin.css'] = array('group' => CSS_AGGREGATE_SYSTEM);
   }
-  $page['#attached']['css'][$path . '/system.theme.css'] = array('group' => CSS_SYSTEM, 'every_page' => TRUE);
+  $page['#attached']['css'][$path . '/system.theme.css'] = array('group' => CSS_AGGREGATE_SYSTEM, 'every_page' => TRUE);
 }
 
 /**
@@ -3031,20 +3096,12 @@ function _system_rebuild_theme_data() {
     if (!empty($themes[$key]->info['base theme'])) {
       $sub_themes[] = $key;
     }
-    if ($themes[$key]->info['engine'] == 'theme') {
-      $filename = dirname($themes[$key]->uri) . '/' . $themes[$key]->name . '.theme';
-      if (file_exists($filename)) {
-        $themes[$key]->owner = $filename;
-        $themes[$key]->prefix = $key;
-      }
-    }
-    else {
-      $engine = $themes[$key]->info['engine'];
-      if (isset($engines[$engine])) {
-        $themes[$key]->owner = $engines[$engine]->uri;
-        $themes[$key]->prefix = $engines[$engine]->name;
-        $themes[$key]->template = TRUE;
-      }
+
+    $engine = $themes[$key]->info['engine'];
+    if (isset($engines[$engine])) {
+      $themes[$key]->owner = $engines[$engine]->uri;
+      $themes[$key]->prefix = $engines[$engine]->name;
+      $themes[$key]->template = TRUE;
     }
 
     // Prefix stylesheets and scripts with module path.
@@ -3548,9 +3605,9 @@ function system_cron() {
   // Cleanup the flood.
   Drupal::service('flood')->garbageCollection();
 
-  $cache_bins = array_merge(module_invoke_all('cache_flush'), array('form', 'menu'));
-  foreach ($cache_bins as $bin) {
-    cache($bin)->deleteExpired();
+  module_invoke_all('cache_flush');
+  foreach (Cache::getBins() as $cache_backend) {
+    $cache_backend->garbageCollection();
   }
 
   // Cleanup the batch table and the queue for failed batches.
@@ -3574,21 +3631,15 @@ function system_cron() {
 }
 
 /**
- * Implements hook_cache_flush().
- */
-function system_cache_flush() {
-  // Do NOT flush the 'form' cache bin to retain in-progress form submissions.
-  return array('bootstrap', 'config', 'cache', 'page', 'path');
-}
-
-/**
  * Implements hook_mail().
  */
 function system_mail($key, &$message, $params) {
+  $token_service = Drupal::token();
+
   $context = $params['context'];
 
-  $subject = token_replace($context['subject'], $context);
-  $body = token_replace($context['message'], $context);
+  $subject = $token_service->replace($context['subject'], $context);
+  $body = $token_service->replace($context['message'], $context);
 
   $message['subject'] .= str_replace(array("\r", "\n"), '', $subject);
   $message['body'][] = $body;
@@ -3655,20 +3706,7 @@ function theme_system_compact_link() {
 }
 
 /**
- * Implements hook_image_toolkits().
- */
-function system_image_toolkits() {
-  include_once DRUPAL_ROOT . '/' . drupal_get_path('module', 'system') . '/' . 'image.gd.inc';
-  return array(
-    'gd' => array(
-      'title' => t('GD2 image manipulation toolkit'),
-      'available' => function_exists('image_gd_check_settings') && image_gd_check_settings(),
-    ),
-  );
-}
-
-/**
- * Attempts to get a file using drupal_http_request and to store it locally.
+ * Attempts to get a file using Guzzle HTTP client and to store it locally.
  *
  * @param $url
  *   The URL of the file to grab.
@@ -3709,12 +3747,22 @@ function system_retrieve_file($url, $destination = NULL, $managed = FALSE, $repl
       $path = $destination;
     }
   }
-  $result = drupal_http_request($url);
-  if ($result->code != 200) {
-    drupal_set_message(t('HTTP error @errorcode occurred when trying to fetch @remote.', array('@errorcode' => $result->code, '@remote' => $url)), 'error');
+  try {
+    $data = Drupal::httpClient()
+      ->get($url)
+      ->send()
+      ->getBody(TRUE);
+    $local = $managed ? file_save_data($data, $path, $replace) : file_unmanaged_save_data($data, $path, $replace);
+  }
+  catch (BadResponseException $exception) {
+    $response = $exception->getResponse();
+    drupal_set_message(t('Failed to fetch file due to HTTP error "%error"', array('%error' => $response->getStatusCode() . ' ' . $response->getReasonPhrase())), 'error');
     return FALSE;
   }
-  $local = $managed ? file_save_data($result->data, $path, $replace) : file_unmanaged_save_data($result->data, $path, $replace);
+  catch (RequestException $exception) {
+    drupal_set_message(t('Failed to fetch file due to error "%error"', array('%error' => $exception->getMessage())), 'error');
+    return FALSE;
+  }
   if (!$local) {
     drupal_set_message(t('@remote could not be saved to @path.', array('@remote' => $url, '@path' => $path)), 'error');
   }
@@ -3884,23 +3932,6 @@ function system_date_format_delete($date_format_id) {
       $config->clear($format_id)->save();
     }
   }
-}
-
-/**
- * Implements hook_archiver_info().
- */
-function system_archiver_info() {
-  $archivers['tar'] = array(
-    'class' => 'Drupal\Component\Archiver\Tar',
-    'extensions' => array('tar', 'tgz', 'tar.gz', 'tar.bz2'),
-  );
-  if (function_exists('zip_open')) {
-    $archivers['zip'] = array(
-      'class' => 'Drupal\Component\Archiver\Zip',
-      'extensions' => array('zip'),
-    );
-  }
-  return $archivers;
 }
 
 /**

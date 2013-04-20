@@ -100,8 +100,8 @@ display:
           summary_options:
             items_per_page: '30'
           specify_validation: '1'
-          plugin_id: node_created_year_month
-human_name: Archive
+          plugin_id: date_year_month
+label: Archive
 module: node
 id: archive
 tag: default

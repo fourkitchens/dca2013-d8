@@ -7,16 +7,14 @@
 
 namespace Drupal\views\Plugin\views\area;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Views area text handler.
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "text_custom"
- * )
+ * @PluginID("text_custom")
  */
 class TextCustom extends AreaPluginBase {
 
@@ -44,12 +42,17 @@ class TextCustom extends AreaPluginBase {
   public function submitOptionsForm(&$form, &$form_state) {
   }
 
+  /**
+   * Implements \Drupal\views\Plugin\views\area\AreaPluginBase::render().
+   */
   function render($empty = FALSE) {
     if (!$empty || !empty($this->options['empty'])) {
-      return $this->render_textarea($this->options['content']);
+      return array(
+        '#markup' => $this->render_textarea($this->options['content']),
+      );
     }
 
-    return '';
+    return array();
   }
 
   /**

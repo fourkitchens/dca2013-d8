@@ -8,14 +8,14 @@
 namespace Drupal\block\Plugin\Core\Entity;
 
 use Drupal\Core\Config\Entity\ConfigEntityBase;
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Core\Entity\Annotation\EntityType;
 use Drupal\Core\Annotation\Translation;
 use Drupal\Component\Plugin\Exception\PluginException;
 
 /**
  * Defines a Block configuration entity class.
  *
- * @Plugin(
+ * @EntityType(
  *   id = "block",
  *   label = @Translation("Block"),
  *   module = "block",
@@ -51,6 +51,17 @@ class Block extends ConfigEntityBase {
    * @var string
    */
   public $label;
+
+  /**
+   * Whether the block label is displayed to end users.
+   *
+   * When this is set to BLOCK_LABEL_VISIBLE (the default value), the label is
+   * rendered as header in the block markup. Otherwise, the label is passed
+   * to the block template as a separate $label_hidden variable.
+   *
+   * @var string
+   */
+  public $label_display = BLOCK_LABEL_VISIBLE;
 
   /**
    * The block UUID.
@@ -169,6 +180,7 @@ class Block extends ConfigEntityBase {
     $names = array(
       'id',
       'label',
+      'label_display',
       'uuid',
       'region',
       'weight',

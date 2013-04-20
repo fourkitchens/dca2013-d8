@@ -34,8 +34,6 @@ class FileFieldWidgetTest extends FileFieldTestBase {
     $type_name = 'article';
     $field_name = strtolower($this->randomName());
     $this->createFileField($field_name, $type_name);
-    $field = field_info_field($field_name);
-    $instance = field_info_instance('node', $field_name, $type_name);
 
     $test_file = $this->getTestFile('text');
 
@@ -88,16 +86,16 @@ class FileFieldWidgetTest extends FileFieldTestBase {
    */
   function testMultiValuedWidget() {
     $type_name = 'article';
-    $field_name = strtolower($this->randomName());
-    $field_name2 = strtolower($this->randomName());
+    // Use explicit names instead of random names for those fields, because of a
+    // bug in drupalPost() with multiple file uploads in one form, where the
+    // order of uploads depends on the order in which the upload elements are
+    // added to the $form (which, in the current implementation of
+    // FileStorage::listAll(), comes down to the alphabetical order on field
+    // names).
+    $field_name = 'test_file_field_1';
+    $field_name2 = 'test_file_field_2';
     $this->createFileField($field_name, $type_name, array('cardinality' => 3));
     $this->createFileField($field_name2, $type_name, array('cardinality' => 3));
-
-    $field = field_info_field($field_name);
-    $instance = field_info_instance('node', $field_name, $type_name);
-
-    $field2 = field_info_field($field_name2);
-    $instance2 = field_info_instance('node', $field_name2, $type_name);
 
     $test_file = $this->getTestFile('text');
 
@@ -113,7 +111,7 @@ class FileFieldWidgetTest extends FileFieldTestBase {
       $this->drupalGet("node/add/$type_name");
       foreach (array($field_name2, $field_name) as $each_field_name) {
         for ($delta = 0; $delta < 3; $delta++) {
-          $edit = array('files[' . $each_field_name . '_' . LANGUAGE_NOT_SPECIFIED . '_' . $delta . ']' => drupal_realpath($test_file->uri));
+          $edit = array('files[' . $each_field_name . '_' . LANGUAGE_NOT_SPECIFIED . '_' . $delta . '][]' => drupal_realpath($test_file->uri));
           // If the Upload button doesn't exist, drupalPost() will automatically
           // fail with an assertion message.
           $this->drupalPost(NULL, $edit, t('Upload'));
@@ -207,8 +205,6 @@ class FileFieldWidgetTest extends FileFieldTestBase {
     $type_name = 'article';
     $field_name = strtolower($this->randomName());
     $this->createFileField($field_name, $type_name);
-    $field = field_info_field($field_name);
-    $instance = field_info_instance('node', $field_name, $type_name);
 
     $test_file = $this->getTestFile('text');
 
@@ -260,6 +256,9 @@ class FileFieldWidgetTest extends FileFieldTestBase {
     $edit = array('field[settings][uri_scheme]' => 'private');
     $this->drupalPost(NULL, $edit, t('Save field settings'));
     $this->drupalPost(NULL, array(), t('Save settings'));
+
+    // Manually clear cache on the tester side.
+    field_info_cache_clear();
 
     // Create node.
     $text_file = $this->getTestFile('text');

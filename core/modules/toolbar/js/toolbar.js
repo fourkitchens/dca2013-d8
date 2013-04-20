@@ -54,9 +54,12 @@ Drupal.behaviors.toolbar = {
       // @todo Optimize this to delay adding each subtree to the DOM until it is
       //   needed; however, take into account screen readers for determining
       //   when the DOM elements are needed.
-      if (Drupal.toolbar.subtrees) {
-        for (var id in Drupal.toolbar.subtrees) {
-          $('#toolbar-link-' + id).after(Drupal.toolbar.subtrees[id]);
+      var subtrees = Drupal.toolbar.subtrees;
+      if (subtrees) {
+        for (var id in subtrees) {
+          if (subtrees.hasOwnProperty(id)) {
+            $('#toolbar-link-' + id).after(subtrees[id]);
+          }
         }
       }
       // Append a messages element for appending interaction updates for screen
@@ -81,12 +84,9 @@ Drupal.behaviors.toolbar = {
       changeOrientation((locked) ? 'vertical' : ((mql.wide.matches) ? 'horizontal' : 'vertical'), locked);
       // Render the main menu as a nested, collapsible accordion.
       $toolbar.find('.toolbar-menu-administration > .menu').toolbarMenu();
-      // Call setHeight on screen resize. Wrap it in debounce to prevent
-      // setHeight from being called too frequently.
-      var setHeight = Drupal.debounce(Drupal.toolbar.setHeight, 200);
-      // Attach behavior to the window.
-      $(window)
-        .on('resize.toolbar', setHeight);
+      // Attach behaviors to the document.
+      $(document)
+        .on('drupalViewportOffsetChange.toolbar', Drupal.toolbar.adjustPlacement);
       // Attach behaviors to the toolbar.
       $toolbar
         .on('click.toolbar', '.bar a', Drupal.toolbar.toggleTray)
@@ -99,6 +99,8 @@ Drupal.behaviors.toolbar = {
         // Update the page and toolbar dimension indicators.
         updatePeripherals();
       }
+      // Call displace to get the initial placement of offset elements.
+      Drupal.displace();
     }
   },
   // Default options.
@@ -137,8 +139,8 @@ Drupal.toolbar.toggleTray = function (event) {
     event.stopPropagation();
     $tab.toggleClass('active');
     // Toggle aria-pressed.
-    var value = $tab.attr('aria-pressed');
-    $tab.attr('aria-pressed', (value === 'false') ? 'true' : 'false');
+    var value = $tab.prop('aria-pressed');
+    $tab.prop('aria-pressed', (value === 'false') ? 'true' : 'false');
     // Append a message that a tray has been opened.
     setMessage(Drupal.t('@tray tray @state.', {
       '@tray': name,
@@ -156,20 +158,24 @@ Drupal.toolbar.toggleTray = function (event) {
       .not($tab)
       .removeClass('active')
       // Set aria-pressed to false.
-      .attr('aria-pressed', 'false');
+      .prop('aria-pressed', false);
     $toolbar.find('.tray').not($activateTray).removeClass('active');
-    // Update the page and toolbar dimension indicators.
-    updatePeripherals();
   }
+  // Update the page and toolbar dimension indicators.
+  updatePeripherals();
 };
 
 /**
- * The height of the toolbar offsets the top of the page content.
+ * Repositions trays and sets body padding according to the height of the bar.
  *
- * Page components can register with the offsettopchange event to know when
- * the height of the toolbar changes.
+ * @param {Event} event
+ *   - jQuery Event object.
+ *
+ * @param {Object} offsets
+ *   - Contains for keys -- top, right, bottom and left -- that indicate the
+ *   viewport offset distances calculated by Drupal.displace().
  */
-Drupal.toolbar.setHeight = function () {
+Drupal.toolbar.adjustPlacement = function (event, offsets) {
   // Set the top of the all the trays to the height of the bar.
   var barHeight = $toolbar.find('.bar').outerHeight();
   var height = barHeight;
@@ -181,20 +187,27 @@ Drupal.toolbar.setHeight = function () {
       tray.style.top = bhpx;
     }
   }
-  /**
-   * Get the height of the active tray and include it in the total
-   * height of the toolbar.
-   */
-  height += $trays.filter('.active.horizontal').outerHeight() || 0;
-  // Indicate the height of the toolbar in the attribute data-offset-top.
-  var offset = parseInt($toolbar.attr('data-offset-top'), 10);
-  if (offset !== height) {
-    $toolbar.attr('data-offset-top', height);
-    // Alter the padding on the top of the body element.
-    $('body').css('padding-top', height);
-    $(document).trigger('offsettopchange', height);
-    $(window).trigger('resize');
-  }
+  // Alter the padding on the top of the body element.
+  $('body').css('padding-top', offsets.top);
+};
+
+/**
+ * Sets the width of a vertical tray in a data attribute.
+ *
+ * If the width of the tray changed, Drupal.displace is called so that elements
+ * can adjust to the placement of the tray.
+ */
+Drupal.toolbar.setTrayWidth = function () {
+  var dir = document.documentElement.dir;
+  var edge = (dir === 'rtl') ? 'right' : 'left';
+  // Remove the left offset from the trays.
+  $toolbar.find('.tray').removeAttr('data-offset-' + edge + ' data-offset-top');
+  // If an active vertical tray exists, mark it as an offset element.
+  $toolbar.find('.tray.vertical.active').attr('data-offset-' + edge, '');
+  // If an active horizontal tray exists, mark it as an offset element.
+  $toolbar.find('.tray.horizontal.active').attr('data-offset-top', '');
+  // Trigger a recalculation of viewport displacing elements.
+  Drupal.displace();
 };
 
 /**
@@ -294,8 +307,8 @@ function toggleOrientationToggle (orientation) {
 function updatePeripherals () {
   // Adjust the body to accommodate trays.
   setBodyState();
-  // Adjust the height of the toolbar.
-  Drupal.toolbar.setHeight();
+  // Adjust the tray width for vertical trays.
+  Drupal.toolbar.setTrayWidth();
 }
 
 /**

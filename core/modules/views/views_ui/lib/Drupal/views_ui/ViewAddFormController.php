@@ -37,7 +37,7 @@ class ViewAddFormController extends ViewFormControllerBase {
       '#attributes' => array('class' => array('fieldset-no-legend')),
     );
 
-    $form['name']['human_name'] = array(
+    $form['name']['label'] = array(
       '#type' => 'textfield',
       '#title' => t('View name'),
       '#required' => TRUE,
@@ -50,7 +50,7 @@ class ViewAddFormController extends ViewFormControllerBase {
       '#maxlength' => 128,
       '#machine_name' => array(
         'exists' => 'views_get_view',
-        'source' => array('name', 'human_name'),
+        'source' => array('name', 'label'),
       ),
       '#description' => t('A unique machine-readable name for this View. It must only contain lowercase letters, numbers, and underscores.'),
     );
@@ -100,7 +100,7 @@ class ViewAddFormController extends ViewFormControllerBase {
       '#options' => $options,
     );
     $show_form = &$form['displays']['show'];
-    $default_value = module_exists('node') ? 'node' : 'users';
+    $default_value = \Drupal::moduleHandler()->moduleExists('node') ? 'node' : 'users';
     $show_form['wizard_key']['#default_value'] = WizardPluginBase::getSelected($form_state, array('show', 'wizard_key'), $default_value, $show_form['wizard_key']);
     // Changing this dropdown updates the entire content of $form['displays'] via
     // AJAX.
@@ -141,8 +141,10 @@ class ViewAddFormController extends ViewFormControllerBase {
     $form_state['wizard_instance'] = $wizard_instance;
     $errors = $form_state['wizard_instance']->validateView($form, $form_state);
 
-    foreach ($errors as $name => $message) {
-      form_set_error($name, $message);
+    foreach ($errors as $display_errors) {
+      foreach ($display_errors as $name => $message) {
+        form_set_error($name, $message);
+      }
     }
   }
 

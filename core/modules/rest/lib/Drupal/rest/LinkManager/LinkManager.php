@@ -43,9 +43,23 @@ class LinkManager implements LinkManagerInterface {
   }
 
   /**
+   * Implements \Drupal\rest\LinkManager\TypeLinkManagerInterface::getTypeInternalIds().
+   */
+  public function getTypeInternalIds($type_uri) {
+    return $this->typeLinkManager->getTypeInternalIds($type_uri);
+  }
+
+  /**
    * Implements \Drupal\rest\LinkManager\RelationLinkManagerInterface::getRelationUri().
    */
   public function getRelationUri($entity_type, $bundle, $field_name) {
     return $this->relationLinkManager->getRelationUri($entity_type, $bundle, $field_name);
+  }
+
+  /**
+   * Implements \Drupal\rest\LinkManager\RelationLinkManagerInterface::getRelationInternalIds().
+   */
+  public function getRelationInternalIds($relation_uri) {
+    return $this->relationLinkManager->getRelationInternalIds($relation_uri);
   }
 }

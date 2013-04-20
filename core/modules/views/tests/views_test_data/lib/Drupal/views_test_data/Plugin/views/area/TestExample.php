@@ -8,16 +8,14 @@
 namespace Drupal\views_test_data\Plugin\views\area;
 
 use Drupal\views\Plugin\views\area\AreaPluginBase;
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Test area plugin.
  *
  * @see Drupal\views\Tests\Handler\AreaTest
  *
- * @Plugin(
- *   id = "test_example"
- * )
+ * @PluginID("test_example")
  */
 class TestExample extends AreaPluginBase {
 
@@ -40,12 +38,15 @@ class TestExample extends AreaPluginBase {
   }
 
   /**
-   * Overrides Drupal\views\Plugin\views\area\AreaPluginBase::render().
+   * Implements \Drupal\views\Plugin\views\area\AreaPluginBase::render().
    */
   public function render($empty = FALSE) {
     if (!$empty || !empty($this->options['empty'])) {
-      return $this->globalTokenReplace($this->options['string']);
+      return array(
+        '#markup' => $this->globalTokenReplace($this->options['string']),
+      );
     }
+    return array();
   }
 
 }

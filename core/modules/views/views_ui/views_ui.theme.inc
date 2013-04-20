@@ -58,7 +58,7 @@ function template_preprocess_views_ui_display_tab_bucket(&$variables) {
  * Implements hook_preprocess_HOOK() for theme_views_ui_view_info().
  */
 function template_preprocess_views_ui_view_info(&$variables) {
-  $variables['title'] = $variables['view']->getHumanName();
+  $variables['title'] = $variables['view']->label();
 
   $displays = $variables['view']->getDisplaysList();
   $variables['displays'] = empty($displays) ? t('None') : format_plural(count($displays), 'Display', 'Displays') . ': ' . '<em>' . implode(', ', $displays) . '</em>';
@@ -238,38 +238,6 @@ function theme_views_ui_reorder_displays_form($vars) {
   ));
   $output .= '</div>';
   $output .= drupal_render_children($form);
-
-  return $output;
-}
-
-/**
- * Turn the rearrange form into a proper table
- */
-function theme_views_ui_rearrange_form($variables) {
-  $form = $variables['form'];
-
-  $rows = array();
-  foreach (element_children($form['fields']) as $id) {
-    if (isset($form['fields'][$id]['name'])) {
-      $row = array();
-      $row[] = drupal_render($form['fields'][$id]['name']);
-      $form['fields'][$id]['weight']['#attributes']['class'] = array('weight');
-      $row[] = drupal_render($form['fields'][$id]['weight']);
-      $row[] = drupal_render($form['fields'][$id]['removed']) . l('<span>' . t('Remove') . '</span>', 'javascript:void()', array('attributes' => array('id' => 'views-remove-link-' . $id, 'class' => array('views-hidden', 'views-button-remove', 'views-remove-link'), 'alt' => t('Remove this item'), 'title' => t('Remove this item')), 'html' => TRUE));
-      $rows[] = array('data' => $row, 'class' => array('draggable'), 'id' => 'views-row-' . $id);
-    }
-  }
-  if (empty($rows)) {
-    $rows[] = array(array('data' => t('No fields available.'), 'colspan' => '2'));
-  }
-
-  $header = array('', t('Weight'), t('Remove'));
-  $output = drupal_render($form['override']);
-  $output .= '<div class="scroll">';
-  $output .= theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('id' => 'arrange')));
-  $output .= '</div>';
-  $output .= drupal_render_children($form);
-  drupal_add_tabledrag('arrange', 'order', 'sibling', 'weight');
 
   return $output;
 }

@@ -7,16 +7,14 @@
 
 namespace Drupal\views\Plugin\views\area;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Views area title override handler.
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "title"
- * )
+ * @PluginID("title")
  */
 class Title extends AreaPluginBase {
 
@@ -50,19 +48,21 @@ class Title extends AreaPluginBase {
    * Overrides Drupal\views\Plugin\views\AreaPluginBase::preRender().
    */
   public function preRender(array $results) {
+    parent::preRender($results);
+
+    // If a title is provided, process it.
     if (!empty($this->options['title'])) {
       $value = $this->globalTokenReplace($this->options['title']);
       $this->view->setTitle($this->sanitizeValue($value, 'xss_admin'), PASS_THROUGH);
     }
-
-    return '';
   }
 
   /**
-   * Implements \Drupal\views\Plugins\views\area\AreaPluginBase::render();
+   * Implements \Drupal\views\Plugin\views\area\AreaPluginBase::render().
    */
   public function render($empty = FALSE) {
-    // Do nothing for this handler.
+    // Do nothing for this handler by returning an empty render array.
+    return array();
   }
 
 }

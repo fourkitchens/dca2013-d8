@@ -9,14 +9,14 @@ namespace Drupal\edit\Plugin\edit\editor;
 
 use Drupal\edit\EditorBase;
 use Drupal\Component\Annotation\Plugin;
-use Drupal\field\FieldInstance;
+use Drupal\field\Plugin\Core\Entity\FieldInstance;
 
 /**
  * Defines the "direct" Create.js PropertyEditor widget.
  *
  * @Plugin(
  *   id = "direct",
- *   jsClassName = "drupalContentEditableWidget",
+ *   jsClassName = "direct",
  *   module = "edit"
  * )
  */
@@ -50,7 +50,7 @@ class DirectEditor extends EditorBase {
   public function getAttachments() {
     return array(
       'library' => array(
-        array('edit', 'edit.editor.direct'),
+        array('edit', 'edit.editorWidget.direct'),
       ),
     );
   }

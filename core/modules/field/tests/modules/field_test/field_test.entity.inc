@@ -9,6 +9,17 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\field_test\Plugin\Core\Entity\TestEntity;
 
 /**
+ * Implements hook_entity_info().
+ */
+function field_test_entity_info() {
+  // If requested, clear the field cache while this is being called. See
+  // Drupal\field\Tests\FieldInfoTest::testFieldInfoCache().
+  if (state()->get('field_test.clear_info_cache_in_hook_entity_info')) {
+    field_info_cache_clear();
+  }
+}
+
+/**
  * Implements hook_entity_info_alter().
  */
 function field_test_entity_info_alter(&$entity_info) {
@@ -86,7 +97,7 @@ function field_test_create_bundle($bundle, $text = NULL) {
   $info = entity_get_info();
   foreach ($info as $type => $type_info) {
     if ($type_info['module'] == 'field_test') {
-      field_attach_create_bundle($type, $bundle);
+      entity_invoke_bundle_hook('create', $type, $bundle);
     }
   }
 }
@@ -108,7 +119,7 @@ function field_test_rename_bundle($bundle_old, $bundle_new) {
   $info = entity_get_info();
   foreach ($info as $type => $type_info) {
     if ($type_info['module'] == 'field_test') {
-      field_attach_rename_bundle($type, $bundle_old, $bundle_new);
+      entity_invoke_bundle_hook('rename', $type, $bundle_old, $bundle_new);
     }
   }
 }
@@ -127,7 +138,7 @@ function field_test_delete_bundle($bundle) {
   $info = entity_get_info();
   foreach ($info as $type => $type_info) {
     if ($type_info['module'] == 'field_test') {
-      field_attach_delete_bundle($type, $bundle);
+      entity_invoke_bundle_hook('delete', $type, $bundle);
     }
   }
 }

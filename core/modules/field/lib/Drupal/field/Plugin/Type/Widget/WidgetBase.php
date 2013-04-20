@@ -7,11 +7,10 @@
 
 namespace Drupal\field\Plugin\Type\Widget;
 
-use Drupal\Component\Plugin\Discovery\DiscoveryInterface;
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\field\Plugin\PluginSettingsBase;
-use Drupal\field\FieldInstance;
+use Drupal\field\Plugin\Core\Entity\FieldInstance;
 
 /**
  * Base class for 'Field widget' plugin implementations.
@@ -28,7 +27,7 @@ abstract class WidgetBase extends PluginSettingsBase implements WidgetInterface 
   /**
    * The field instance definition.
    *
-   * @var Drupal\field\FieldInstance
+   * @var \Drupal\field\Plugin\Core\Entity\FieldInstance
    */
   protected $instance;
 
@@ -51,18 +50,17 @@ abstract class WidgetBase extends PluginSettingsBase implements WidgetInterface 
    *
    * @param array $plugin_id
    *   The plugin_id for the widget.
-   * @param Drupal\Component\Plugin\Discovery\DiscoveryInterface $discovery
-   *   The Discovery class that holds access to the widget implementation
-   *   definition.
-   * @param Drupal\field\FieldInstance $instance
+   * @param array $plugin_definition
+   *   The plugin implementation definition.
+   * @param \Drupal\field\Plugin\Core\Entity\FieldInstance $instance
    *   The field instance to which the widget is associated.
    * @param array $settings
    *   The widget settings.
    * @param int $weight
    *   The widget weight.
    */
-  public function __construct($plugin_id, DiscoveryInterface $discovery, FieldInstance $instance, array $settings, $weight) {
-    parent::__construct(array(), $plugin_id, $discovery);
+  public function __construct($plugin_id, array $plugin_definition, FieldInstance $instance, array $settings, $weight) {
+    parent::__construct(array(), $plugin_id, $plugin_definition);
 
     $this->instance = $instance;
     $this->field = field_info_field($instance['field_name']);
@@ -107,7 +105,7 @@ abstract class WidgetBase extends PluginSettingsBase implements WidgetInterface 
       $delta = isset($get_delta) ? $get_delta : 0;
       $element = array(
         '#title' => check_plain($instance['label']),
-        '#description' => field_filter_xss(token_replace($instance['description'])),
+        '#description' => field_filter_xss(\Drupal::token()->replace($instance['description'])),
       );
       $element = $this->formSingleElement($entity, $items, $delta, $langcode, $element, $form, $form_state);
 
@@ -198,7 +196,7 @@ abstract class WidgetBase extends PluginSettingsBase implements WidgetInterface 
     $wrapper_id = drupal_html_id($id_prefix . '-add-more-wrapper');
 
     $title = check_plain($instance['label']);
-    $description = field_filter_xss(token_replace($instance['description']));
+    $description = field_filter_xss(\Drupal::token()->replace($instance['description']));
 
     $elements = array();
 

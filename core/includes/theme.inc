@@ -209,7 +209,7 @@ function _drupal_theme_initialize($theme, $base_theme = array(), $registry_callb
   // And now add the stylesheets properly
   foreach ($final_stylesheets as $media => $stylesheets) {
     foreach ($stylesheets as $stylesheet) {
-      drupal_add_css($stylesheet, array('group' => CSS_THEME, 'every_page' => TRUE, 'media' => $media));
+      drupal_add_css($stylesheet, array('group' => CSS_AGGREGATE_THEME, 'every_page' => TRUE, 'media' => $media));
     }
   }
 
@@ -1147,11 +1147,11 @@ function theme($hook, $variables = array()) {
     // a function, but a template overrides that default implementation). In
     // these cases, a template should still be able to expect to have access to
     // the variables provided by template_preprocess(), so we add them here if
-    // they don't already exist. We don't want to run template_preprocess()
-    // twice (it would be inefficient and mess up zebra striping), so we use the
-    // 'directory' variable to determine if it has already run, which while not
-    // completely intuitive, is reasonably safe, and allows us to save on the
-    // overhead of adding some new variable to track that.
+    // they don't already exist. We don't want the overhead of running
+    // template_preprocess() twice, so we use the 'directory' variable to
+    // determine if it has already run, which while not completely intuitive,
+    // is reasonably safe, and allows us to save on the overhead of adding some
+    // new variable to track that.
     if (!isset($variables['directory'])) {
       $default_template_variables = array();
       template_preprocess($default_template_variables, $hook);
@@ -1980,7 +1980,15 @@ function drupal_pre_render_table(array $element) {
     foreach (element_children($element[$first]) as $second) {
       // Assign the element by reference, so any potential changes to the
       // original element are taken over.
-      $row['data'][] = array('data' => &$element[$first][$second]);
+      $column = array('data' => &$element[$first][$second]);
+
+      // Apply wrapper attributes of second-level elements as table cell
+      // attributes.
+      if (isset($element[$first][$second]['#wrapper_attributes'])) {
+        $column += $element[$first][$second]['#wrapper_attributes'];
+      }
+
+      $row['data'][] = $column;
     }
     $element['#rows'][] = $row;
   }
@@ -2203,25 +2211,24 @@ function theme_table($variables) {
     $flip = array('even' => 'odd', 'odd' => 'even');
     $class = 'even';
     foreach ($rows as $number => $row) {
-      $attributes = array();
-
       // Check if we're dealing with a simple or complex row
       if (isset($row['data'])) {
-        foreach ($row as $key => $value) {
-          if ($key == 'data') {
-            $cells = $value;
-          }
-          else {
-            $attributes[$key] = $value;
-          }
-        }
+        $cells = $row['data'];
+        $no_striping = isset($row['no_striping']) ? $row['no_striping'] : FALSE;
+
+        // Set the attributes array and exclude 'data' and 'no_striping'.
+        $attributes = $row;
+        unset($attributes['data']);
+        unset($attributes['no_striping']);
       }
       else {
         $cells = $row;
+        $attributes = array();
+        $no_striping = FALSE;
       }
       if (count($cells)) {
         // Add odd/even class
-        if (empty($row['no_striping'])) {
+        if (!$no_striping) {
           $class = $flip[$class];
           $attributes['class'][] = $class;
         }
@@ -2615,13 +2622,6 @@ function _theme_table_cell($cell, $header = FALSE) {
 function template_preprocess(&$variables, $hook) {
   global $user;
   static $count = array(), $default_attributes;
-
-  // Track run count for each hook to provide zebra striping. See
-  // "template_preprocess_block()" which provides the same feature specific to
-  // blocks.
-  $count[$hook] = isset($count[$hook]) && is_int($count[$hook]) ? $count[$hook] : 1;
-  $variables['zebra'] = ($count[$hook] % 2) ? 'odd' : 'even';
-  $variables['id'] = $count[$hook]++;
 
   // Tell all templates where they are located.
   $variables['directory'] = path_to_theme();
@@ -3177,9 +3177,6 @@ function drupal_common_theme() {
     'breadcrumb' => array(
       'variables' => array('breadcrumb' => NULL),
     ),
-    'help' => array(
-      'variables' => array(),
-    ),
     'table' => array(
       'variables' => array('header' => NULL, 'rows' => NULL, 'attributes' => array(), 'caption' => NULL, 'colgroups' => array(), 'sticky' => TRUE, 'responsive' => TRUE, 'empty' => ''),
     ),
@@ -3217,9 +3214,6 @@ function drupal_common_theme() {
     'maintenance_page' => array(
       'variables' => array('content' => NULL, 'show_messages' => TRUE),
       'template' => 'maintenance-page',
-    ),
-    'update_page' => array(
-      'variables' => array('content' => NULL, 'show_messages' => TRUE),
     ),
     'install_page' => array(
       'variables' => array('content' => NULL),

@@ -13,6 +13,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\rest\Plugin\ResourceBase;
 use Drupal\rest\ResourceResponse;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -44,6 +45,14 @@ class EntityResource extends ResourceBase {
     $definition = $this->getDefinition();
     $entity = entity_load($definition['entity_type'], $id);
     if ($entity) {
+      if (!$entity->access('view')) {
+        throw new AccessDeniedHttpException();
+      }
+      foreach ($entity as $field_name => $field) {
+        if (!$field->access('view')) {
+          unset($entity->{$field_name});
+        }
+      }
       return new ResourceResponse($entity);
     }
     throw new NotFoundHttpException(t('Entity with ID @id not found', array('@id' => $id)));
@@ -63,6 +72,9 @@ class EntityResource extends ResourceBase {
    * @throws \Symfony\Component\HttpKernel\Exception\HttpException
    */
   public function post($id, EntityInterface $entity) {
+    if (!$entity->access('create')) {
+      throw new AccessDeniedHttpException();
+    }
     $definition = $this->getDefinition();
     // Verify that the deserialized entity is of the type that we expect to
     // prevent security issues.
@@ -74,52 +86,18 @@ class EntityResource extends ResourceBase {
     if (!$entity->isNew()) {
       throw new BadRequestHttpException(t('Only new entities can be created'));
     }
+    foreach ($entity as $field_name => $field) {
+      if (!$field->access('create')) {
+        throw new AccessDeniedHttpException(t('Access denied on creating field @field.', array('@field' => $field_name)));
+      }
+    }
     try {
       $entity->save();
       watchdog('rest', 'Created entity %type with ID %id.', array('%type' => $entity->entityType(), '%id' => $entity->id()));
 
-      $url = url(strtr($this->plugin_id, ':', '/') . '/' . $entity->id(), array('absolute' => TRUE));
+      $url = url(strtr($this->pluginId, ':', '/') . '/' . $entity->id(), array('absolute' => TRUE));
       // 201 Created responses have an empty body.
       return new ResourceResponse(NULL, 201, array('Location' => $url));
-    }
-    catch (EntityStorageException $e) {
-      throw new HttpException(500, t('Internal Server Error'), $e);
-    }
-  }
-
-  /**
-   * Responds to entity PUT requests.
-   *
-   * @param mixed $id
-   *   The entity ID.
-   * @param \Drupal\Core\Entity\EntityInterface $entity
-   *   The entity.
-   *
-   * @return \Drupal\rest\ResourceResponse
-   *   The HTTP response object.
-   *
-   * @throws \Symfony\Component\HttpKernel\Exception\HttpException
-   */
-  public function put($id, EntityInterface $entity) {
-    if (empty($id)) {
-      throw new NotFoundHttpException();
-    }
-    $definition = $this->getDefinition();
-    $original_entity = entity_load($definition['entity_type'], $id);
-    // We don't support creating entities with PUT, so we throw an error if
-    // there is no existing entity.
-    if ($original_entity == FALSE) {
-      throw new NotFoundHttpException();
-    }
-    $info = $entity->entityInfo();
-    // Make sure that the entity ID is the one provided in the URL.
-    $entity->{$info['entity_keys']['id']} = $id;
-    try {
-      $entity->save();
-      watchdog('rest', 'Updated entity %type with ID %id.', array('%type' => $entity->entityType(), '%id' => $entity->id()));
-
-      // Update responses have an empty body.
-      return new ResourceResponse(NULL, 204);
     }
     catch (EntityStorageException $e) {
       throw new HttpException(500, t('Internal Server Error'), $e);
@@ -153,10 +131,27 @@ class EntityResource extends ResourceBase {
     if ($original_entity == FALSE) {
       throw new NotFoundHttpException();
     }
+    if (!$original_entity->access('update')) {
+      throw new AccessDeniedHttpException();
+    }
+    $info = $original_entity->entityInfo();
+    // Make sure that the entity ID is the one provided in the URL.
+    $entity->{$info['entity_keys']['id']} = $id;
+
     // Overwrite the received properties.
-    foreach ($entity->getProperties() as $name => $property) {
-      if (isset($entity->{$name})) {
-        $original_entity->{$name} = $property;
+    foreach ($entity as $field_name => $field) {
+      if (isset($entity->{$field_name})) {
+        if (empty($entity->{$field_name})) {
+          if (!$original_entity->{$field_name}->access('delete')) {
+            throw new AccessDeniedHttpException(t('Access denied on deleting field @field.', array('@field' => $field_name)));
+          }
+        }
+        else {
+          if (!$original_entity->{$field_name}->access('update')) {
+            throw new AccessDeniedHttpException(t('Access denied on updating field @field.', array('@field' => $field_name)));
+          }
+        }
+        $original_entity->{$field_name} = $field;
       }
     }
     try {
@@ -186,6 +181,9 @@ class EntityResource extends ResourceBase {
     $definition = $this->getDefinition();
     $entity = entity_load($definition['entity_type'], $id);
     if ($entity) {
+      if (!$entity->access('delete')) {
+        throw new AccessDeniedHttpException();
+      }
       try {
         $entity->delete();
         watchdog('rest', 'Deleted entity %type with ID %id.', array('%type' => $entity->entityType(), '%id' => $entity->id()));
@@ -198,19 +196,5 @@ class EntityResource extends ResourceBase {
       }
     }
     throw new NotFoundHttpException(t('Entity with ID @id not found', array('@id' => $id)));
-  }
-
-  /**
-   * Overrides ResourceBase::permissions().
-   */
-  public function permissions() {
-    $permissions = parent::permissions();
-    // Mark all items as administrative permissions for now.
-    // @todo Remove this restriction once proper entity access control is
-    // implemented. See http://drupal.org/node/1866908
-    foreach ($permissions as $name => $permission) {
-      $permissions[$name]['restrict access'] = TRUE;
-    }
-    return $permissions;
   }
 }

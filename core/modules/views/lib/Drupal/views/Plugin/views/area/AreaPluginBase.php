@@ -27,6 +27,13 @@ use Drupal\views\Plugin\views\HandlerBase;
 abstract class AreaPluginBase extends HandlerBase {
 
   /**
+   * The type of this area handler, i.e. 'header', 'footer', or 'empty'.
+   *
+   * @var string
+   */
+  public $areaType;
+
+  /**
    * Overrides Drupal\views\Plugin\views\HandlerBase::init().
    *
    * Make sure that no result area handlers are set to be shown when the result
@@ -35,19 +42,9 @@ abstract class AreaPluginBase extends HandlerBase {
   public function init(ViewExecutable $view, DisplayPluginBase $display, array &$options = NULL) {
     parent::init($view, $display, $options);
 
-    if (isset($this->handler_type) && ($this->handler_type == 'empty')) {
+    if ($this->areaType == 'empty') {
       $this->options['empty'] = TRUE;
     }
-  }
-
-  /**
-   * Get this area's label.
-   */
-  public function label() {
-    if (!isset($this->options['label'])) {
-      return $this->adminLabel();
-    }
-    return $this->options['label'];
   }
 
   protected function defineOptions() {
@@ -55,7 +52,7 @@ abstract class AreaPluginBase extends HandlerBase {
 
     $this->definition['field'] = !empty($this->definition['field']) ? $this->definition['field'] : '';
     $label = !empty($this->definition['label']) ? $this->definition['label'] : $this->definition['field'];
-    $options['label'] = array('default' => $label, 'translatable' => TRUE);
+    $options['admin_label']['default'] = $label;
     $options['empty'] = array('default' => FALSE, 'bool' => TRUE);
 
     return $options;
@@ -65,7 +62,7 @@ abstract class AreaPluginBase extends HandlerBase {
    * Provide extra data to the administration form
    */
   public function adminSummary() {
-    return $this->label();
+    return $this->adminLabel();
   }
 
   /**
@@ -74,12 +71,6 @@ abstract class AreaPluginBase extends HandlerBase {
    */
   public function buildOptionsForm(&$form, &$form_state) {
     parent::buildOptionsForm($form, $form_state);
-    $form['label'] = array(
-      '#type' => 'textfield',
-      '#title' => t('Label'),
-      '#default_value' => isset($this->options['label']) ? $this->options['label'] : '',
-      '#description' => t('The label for this area that will be displayed only administratively.'),
-    );
 
     if ($form_state['type'] != 'empty') {
       $form['empty'] = array(
@@ -125,7 +116,7 @@ abstract class AreaPluginBase extends HandlerBase {
         ),
       );
       $form['tokens']['help'] = array(
-        '#markup' => '<p>' . t('The following tokens are available. If you would like to have the characters \'[\' and \']\' please use the html entity codes \'%5B\' or  \'%5D\' or they will get replaced with empty space.') . '</p>',
+        '#markup' => '<p>' . t('The following tokens are available. If you would like to have the characters \'[\' and \']\' use the html entity codes \'%5B\' or  \'%5D\' or they will get replaced with empty space.') . '</p>',
       );
       foreach (array_keys($options) as $type) {
         if (!empty($options[$type])) {
@@ -159,7 +150,13 @@ abstract class AreaPluginBase extends HandlerBase {
   }
 
   /**
-   * Render the area
+   * Render the area.
+   *
+   * @param bool $empty
+   *   (optional) Indicator if view result is empty or not. Defaults to FALSE.
+   *
+   * @return array
+   *   In any case we need a valid Drupal render array to return.
    */
   public abstract function render($empty = FALSE);
 

@@ -15,7 +15,10 @@ a:visited {
 }
 a:hover,
 a:active,
-a:focus {
+a:focus,
+.link:hover,
+.link:active,
+.link:focus {
   text-decoration: underline;
 }
 h1,
@@ -58,7 +61,7 @@ kbd,
 samp,
 var {
   padding: 0 0.4em;
-  font-size: 0.77em;
+  font-size: 0.857em;
   font-family: Menlo, Consolas, "Andale Mono", "Lucida Console", "Nimbus Mono L", "DejaVu Sans Mono", monospace, "Courier New";
 }
 code {
@@ -122,14 +125,16 @@ div.messages,
 div.meta,
 p.comment-time,
 table,
-.breadcrumb {
+.breadcrumb,
+.link {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 input,
 textarea,
 select,
 .form-button,
-a.button {
+a.button,
+button {
   font-family: "Lucida Grande", "Lucida Sans Unicode", Verdana, sans-serif;
 }
 
@@ -338,6 +343,13 @@ h1#site-name {
   float: left; /* LTR */
   margin: 0 10px;
   padding: 0;
+}
+.region-header .block > h2 {
+  /* @extend .element-invisible */
+  position: absolute !important;
+  clip: rect(1px, 1px, 1px, 1px);
+  overflow: hidden;
+  height: 1px;
 }
 .region-header .block .content {
   margin: 0;
@@ -872,6 +884,13 @@ ul.links {
   padding: 0.5em 0;
   margin-top: 0;
 }
+#footer .block > h2 {
+  /* @extend .element-invisible */
+  position: absolute !important;
+  clip: rect(1px, 1px, 1px, 1px);
+  overflow: hidden;
+  height: 1px;
+}
 #footer .block h2 {
   margin: 0;
 }
@@ -1378,6 +1397,7 @@ div.password-suggestions {
 /* --------------- Search Results ---------------- */
 ol.search-results {
   padding-left: 0;
+  list-style-position: inside;
 }
 .search-results li {
   border-bottom: 1px solid #d3d7d9;
@@ -1622,7 +1642,7 @@ div.admin-panel .description {
 /**
  * Responsive tables.
  */
-@media screen and (max-width:28.125em) { /* 450px */
+@media screen and (max-width: 37.5em) { /* 600px */
   th.priority-low,
   td.priority-low,
   th.priority-medium,
@@ -1630,7 +1650,7 @@ div.admin-panel .description {
     display: none;
   }
 }
-@media screen and (max-width:45em) { /* 720px */
+@media screen and (max-width: 60em) { /* 920px */
   th.priority-low,
   td.priority-low {
     display: none;

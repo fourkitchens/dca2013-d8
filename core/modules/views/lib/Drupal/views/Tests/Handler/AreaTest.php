@@ -75,13 +75,13 @@ class AreaTest extends HandlerTestBase {
 
       // Then setup a no empty label.
       $labels[$type] = $this->randomName();
-      $this->drupalPost($edit_path, array('options[label]' => $labels[$type]), t('Apply'));
+      $this->drupalPost($edit_path, array('options[admin_label]' => $labels[$type]), t('Apply'));
       // Make sure that the new label appears on the site.
       $this->assertText($labels[$type]);
 
-      // Test that the settings (empty/label) are accessible.
+      // Test that the settings (empty/admin_label) are accessible.
       $this->drupalGet($edit_path);
-      $this->assertField('options[label]');
+      $this->assertField('options[admin_label]');
       if ($type !== 'empty') {
         $this->assertField('options[empty]');
       }
@@ -111,6 +111,7 @@ class AreaTest extends HandlerTestBase {
 
     // Check whether the strings exists in the output.
     $output = $view->preview();
+    $output = drupal_render($output);
     $this->assertTrue(strpos($output, $header_string) !== FALSE);
     $this->assertTrue(strpos($output, $footer_string) !== FALSE);
     $this->assertTrue(strpos($output, $empty_string) !== FALSE);
@@ -149,7 +150,8 @@ class AreaTest extends HandlerTestBase {
 
     // Test we have the site:name token in the output.
     $output = $view->preview();
-    $expected = token_replace('[site:name]');
+    $output = drupal_render($output);
+    $expected = \Drupal::token()->replace('[site:name]');
     $this->assertTrue(strpos($output, $expected) !== FALSE);
   }
 
@@ -167,7 +169,6 @@ class AreaTest extends HandlerTestBase {
         'table' => 'views',
         'field' => 'title',
         'admin_label' => '',
-        'label' => '',
         'empty' => '0',
         'title' => 'Overridden title',
       ),

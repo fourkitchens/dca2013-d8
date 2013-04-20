@@ -69,6 +69,23 @@ class MenuRouterTest extends WebTestBase {
   }
 
   /**
+   * Test local tasks with route placeholders.
+   */
+  public function testHookMenuIntegration() {
+    // Generate base path with random argument.
+    $base_path = 'foo/' . $this->randomName(8);
+    $this->drupalGet($base_path);
+    // Confirm correct controller activated.
+    $this->assertText('test1');
+    // Confirm local task links are displayed.
+    $this->assertLink('Local task A');
+    $this->assertLink('Local task B');
+    // Confirm correct local task href.
+    $this->assertLinkByHref(url($base_path));
+    $this->assertLinkByHref(url($base_path . '/b'));
+  }
+
+  /**
    * Test title callback set to FALSE.
    */
   function testTitleCallbackFalse() {
@@ -348,7 +365,7 @@ class MenuRouterTest extends WebTestBase {
    */
   function testMenuHidden() {
     // Verify links for one dynamic argument.
-    $query = entity_query('menu_link')
+    $query = \Drupal::entityQuery('menu_link')
       ->condition('router_path', 'menu-test/hidden/menu', 'STARTS_WITH')
       ->sort('router_path');
     $result = $query->execute();
@@ -400,7 +417,7 @@ class MenuRouterTest extends WebTestBase {
     $this->assertEqual($link['plid'], $plid, format_string('%path plid @link_plid is equal to @plid.', array('%path' => $link['router_path'], '@link_plid' => $link['plid'], '@plid' => $plid)));
 
     // Verify links for two dynamic arguments.
-    $query = entity_query('menu_link')
+    $query = \Drupal::entityQuery('menu_link')
       ->condition('router_path', 'menu-test/hidden/block', 'STARTS_WITH')
       ->sort('router_path');
     $result = $query->execute();

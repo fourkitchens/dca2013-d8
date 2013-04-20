@@ -5,7 +5,6 @@
  * Provides a field that can reference other entities.
  */
 
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -29,7 +28,8 @@ function entity_reference_field_info() {
     ),
     'default_widget' => 'entity_reference_autocomplete',
     'default_formatter' => 'entity_reference_label',
-    'field item class' => '\Drupal\Core\Entity\Field\Type\EntityReferenceItem',
+    'data_type' => 'entity_reference_configurable_field',
+    'field item class' => '\Drupal\entity_reference\Type\ConfigurableEntityReferenceItem',
   );
   return $field_info;
 }
@@ -64,29 +64,15 @@ function entity_reference_entity_field_info_alter(&$info, $entity_type) {
 }
 
 /**
- * Implements hook_menu().
+ * Implements hook_field_widget_info_alter().
  */
-function entity_reference_menu() {
-  $items = array();
-
-  $items['entity_reference/autocomplete/single/%/%/%'] = array(
-    'title' => 'Entity Reference Autocomplete',
-    'page callback' => 'entity_reference_autocomplete_callback',
-    'page arguments' => array(2, 3, 4, 5),
-    'access callback' => 'entity_reference_autocomplete_access_callback',
-    'access arguments' => array(2, 3, 4, 5),
-    'type' => MENU_CALLBACK,
-  );
-  $items['entity_reference/autocomplete/tags/%/%/%'] = array(
-    'title' => 'Entity Reference Autocomplete',
-    'page callback' => 'entity_reference_autocomplete_callback',
-    'page arguments' => array(2, 3, 4, 5),
-    'access callback' => 'entity_reference_autocomplete_access_callback',
-    'access arguments' => array(2, 3, 4, 5),
-    'type' => MENU_CALLBACK,
-  );
-
-  return $items;
+function entity_reference_field_widget_info_alter(&$info) {
+  if (isset($info['options_select'])) {
+    $info['options_select']['field_types'][] = 'entity_reference';
+  }
+  if (isset($info['options_buttons'])) {
+    $info['options_buttons']['field_types'][] = 'entity_reference';
+  }
 }
 
 /**
@@ -184,21 +170,20 @@ function entity_reference_field_settings_form($field, $instance, $has_data) {
   // Select the target entity type.
   $entity_type_options = array();
   foreach (entity_get_info() as $entity_type => $entity_info) {
-    // @todo Remove this ugly hack, needed for now because Config entities have
-    // no EFQ support. Revisit after http://drupal.org/node/1853856 and
-    // http://drupal.org/node/1846454.
-    if (!is_subclass_of($entity_info['class'], '\Drupal\Core\Config\Entity\ConfigEntityBase')) {
+    // @todo As the database schema can currently only store numeric IDs of
+    // referenced entities and configuration entities have string IDs, prevent
+    // configuration entities from being referenced.
+    if (!in_array('\Drupal\Core\Config\Entity\ConfigEntityInterface', class_implements($entity_info['class']))) {
       $entity_type_options[$entity_type] = $entity_info['label'];
     }
   }
 
   $form['target_type'] = array(
     '#type' => 'select',
-    '#title' => t('Target type'),
+    '#title' => t('Type of item to reference'),
     '#options' => $entity_type_options,
     '#default_value' => $field['settings']['target_type'],
     '#required' => TRUE,
-    '#description' => t('The entity type that can be referenced through this field.'),
     '#disabled' => $has_data,
     '#size' => 1,
   );
@@ -484,133 +469,4 @@ function entity_reference_create_instance($entity_type, $bundle, $field_name, $f
     );
     field_create_instance($instance);
   }
-}
-
-/**
- * Menu Access callback for the autocomplete widget.
- *
- * @param string $type
- *   The widget type (i.e. 'single' or 'tags').
- * @param string $field_name
- *   The name of the entity reference field.
- * @param string $entity_type
- *   The entity type.
- * @param string $bundle_name
- *   The bundle name.
- *
- * @return bool
- *   TRUE if user can access this menu item, FALSE otherwise.
- */
-function entity_reference_autocomplete_access_callback($type, $field_name, $entity_type, $bundle_name) {
-  if (!$field = field_info_field($field_name)) {
-    return FALSE;
-  }
-  if (!$instance = field_info_instance($entity_type, $field_name, $bundle_name)){
-    return FALSE;
-  }
-
-  if ($field['type'] != 'entity_reference' || !field_access('edit', $field, $entity_type)) {
-    return FALSE;
-  }
-
-  return TRUE;
-}
-
-/**
- * Menu callback; Autocomplete the label of an entity.
- *
- * @param string $type
- *   The widget type (i.e. 'single' or 'tags').
- * @param string $field_name
- *   The name of the entity reference field.
- * @param string $entity_type
- *   The entity type.
- * @param string $bundle_name
- *   The bundle name.
- * @param string $entity_id
- *   (optional) The entity ID the entity reference field is attached to.
- *   Defaults to ''.
- *
- * @return \Symfony\Component\HttpFoundation\JsonResponse
- */
-function entity_reference_autocomplete_callback($type, $field_name, $entity_type, $bundle_name, $entity_id = '') {
-  $field = field_info_field($field_name);
-  $instance = field_info_instance($entity_type, $field_name, $bundle_name);
-  $prefix = '';
-
-  // Get the typed string, if exists from the URL.
-  $tags_typed = drupal_container()->get('request')->query->get('q');
-  $tags_typed = drupal_explode_tags($tags_typed);
-  $string = drupal_strtolower(array_pop($tags_typed));
-
-  // The user entered a comma-separated list of entity labels, so we generate a
-  // prefix.
-  if ($type == 'tags' && !empty($string)) {
-    $prefix = count($tags_typed) ? drupal_implode_tags($tags_typed) . ', ' : '';
-  }
-
-  return entity_reference_autocomplete_callback_get_matches($field, $instance, $entity_type, $entity_id, $prefix, $string);
-}
-
-/**
- * Returns JSON data based on a given field, instance and search string.
- *
- * This function can be used by other modules that wish to pass a mocked
- * definition of the field or instance.
- *
- * @param array $field
- *   The field array definition.
- * @param array $instance
- *   The instance array definition.
- * @param string $entity_type
- *   The entity type.
- * @param string $entity_id
- *   (optional) The entity ID the entity reference field is attached to.
- *   Defaults to ''.
- * @param string $prefix
- *   (optional) A prefix for all the keys returned by this function.
- * @param string $string
- *   (optional) The label of the entity to query by.
- *
- * @return \Symfony\Component\HttpFoundation\JsonResponse
- *
- * @see entity_reference_autocomplete_callback()
- */
-function entity_reference_autocomplete_callback_get_matches($field, $instance, $entity_type, $entity_id = '', $prefix = '', $string = '') {
-  $target_type = $field['settings']['target_type'];
-  $matches = array();
-  $entity = NULL;
-
-  if ($entity_id !== 'NULL') {
-    $entity = entity_load($entity_type, $entity_id);
-    // @todo: Improve when we have entity_access().
-    $entity_access = $target_type == 'node' ? node_access('view', $entity) : TRUE;
-    if (!$entity || !$entity_access) {
-      return MENU_ACCESS_DENIED;
-    }
-  }
-  $handler = entity_reference_get_selection_handler($field, $instance, $entity);
-
-  if (isset($string)) {
-    // Get an array of matching entities.
-    $match_operator = !empty($instance['widget']['settings']['match_operator']) ? $instance['widget']['settings']['match_operator'] : 'CONTAINS';
-    $entity_labels = $handler->getReferencableEntities($string, $match_operator, 10);
-
-    // Loop through the entities and convert them into autocomplete output.
-    foreach ($entity_labels as $values) {
-      foreach ($values as $entity_id => $label) {
-        $key = "$label ($entity_id)";
-        // Strip things like starting/trailing white spaces, line breaks and
-        // tags.
-        $key = preg_replace('/\s\s+/', ' ', str_replace("\n", '', trim(decode_entities(strip_tags($key)))));
-        // Names containing commas or quotes must be wrapped in quotes.
-        if (strpos($key, ',') !== FALSE || strpos($key, '"') !== FALSE) {
-          $key = '"' . str_replace('"', '""', $key) . '"';
-        }
-        $matches[$prefix . $key] = '<div class="reference-autocomplete">' . $label . '</div>';
-      }
-    }
-  }
-
-  return new JsonResponse($matches);
 }

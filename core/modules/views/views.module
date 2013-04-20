@@ -9,6 +9,7 @@
  * incoming page and block requests.
  */
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\views\ViewExecutable;
 use Drupal\Component\Plugin\Exception\PluginException;
@@ -68,7 +69,7 @@ function views_pre_render_view_element($element) {
 
   $view = views_get_view($element['#name']);
   if ($view && $view->access($element['#display_id'])) {
-    $element['view']['#markup'] = $view->preview($element['#display_id'], $element['#arguments']);
+    $element['view'] = $view->preview($element['#display_id'], $element['#arguments']);
   }
 
   return $element;
@@ -78,7 +79,7 @@ function views_pre_render_view_element($element) {
  * Implement hook_theme(). Register views theming functions.
  */
 function views_theme($existing, $type, $theme, $path) {
-  module_load_include('inc', 'views', 'views.theme');
+  Drupal::moduleHandler()->loadInclude('views', 'inc', 'views.theme');
 
   // Some quasi clever array merging here.
   $base = array(
@@ -235,6 +236,7 @@ function views_plugin_list() {
  * node portion of the theme registry.
  */
 function views_preprocess_node(&$vars) {
+  Drupal::moduleHandler()->loadInclude('node', 'views.inc');
   // The 'view' attribute of the node is added in views_preprocess_node()
   if (!empty($vars['node']->view) && $vars['node']->view->storage->id()) {
     $vars['view'] = $vars['node']->view;
@@ -251,7 +253,7 @@ function views_preprocess_node(&$vars) {
   }
 
   // Allow to alter comments and links based on the settings in the row plugin.
-  if (!empty($vars['view']->style_plugin->row_plugin) && get_class($vars['view']->style_plugin->row_plugin) == 'views_plugin_row_node_view') {
+  if (!empty($vars['view']->rowPlugin) && $vars['view']->rowPlugin->getPluginId() == 'node') {
     node_row_node_view_preprocess_node($vars);
   }
 }
@@ -565,7 +567,7 @@ function views_contextual_links_view_alter(&$element, $items) {
 function views_add_contextual_links(&$render_element, $location, ViewExecutable $view, $display_id) {
   // Do not do anything if the view is configured to hide its administrative
   // links.
-  if (empty($view->hide_admin_links)) {
+  if ($view->getShowAdminLinks()) {
     // Also do not do anything if the display plugin has not defined any
     // contextual links that are intended to be displayed in the requested
     // location.
@@ -650,13 +652,6 @@ function views_language_list($field = 'name', $flags = LANGUAGE_ALL) {
 }
 
 /**
- * Implements hook_cache_flush().
- */
-function views_cache_flush() {
-  return array('views_info', 'views_results');
-}
-
-/**
  * Implements hook_field_create_instance.
  */
 function views_field_create_instance($instance) {
@@ -688,18 +683,20 @@ function views_invalidate_cache() {
   cache('views_info')->deleteAll();
 
   // Clear the page and block cache.
-  cache_delete_tags(array('content' => TRUE));
+  Cache::deleteTags(array('content' => TRUE));
 
   // Set the menu as needed to be rebuilt.
   state()->set('menu_rebuild_needed', TRUE);
 
+  $module_handler = Drupal::moduleHandler();
+
   // Invalidate the block cache to update views block derivatives.
-  if (module_exists('block')) {
-    drupal_container()->get('plugin.manager.block')->clearCachedDefinitions();
+  if ($module_handler->moduleExists('block')) {
+    Drupal::service('plugin.manager.block')->clearCachedDefinitions();
   }
 
   // Allow modules to respond to the Views cache being cleared.
-  module_invoke_all('views_invalidate_cache');
+  $module_handler->invokeAll('views_invalidate_cache');
 }
 
 /**
@@ -778,11 +775,12 @@ function &views_set_page_view($view = NULL) {
 }
 
 /**
- * Find out what, if any, page view is currently in use. Please note that
- * this returns a reference, so be careful! You can unintentionally modify the
- * $view object.
+ * Find out what, if any, page view is currently in use.
  *
- * @return Drupal\views\ViewExecutable
+ * Note that this returns a reference, so be careful! You can unintentionally
+ * modify the $view object.
+ *
+ * @return \Drupal\views\ViewExecutable
  *   A fully formed, empty $view object.
  */
 function &views_get_page_view() {
@@ -805,11 +803,13 @@ function &views_set_current_view($view = NULL) {
 }
 
 /**
- * Find out what, if any, current view is currently in use. Please note that
- * this returns a reference, so be careful! You can unintentionally modify the
- * $view object.
+ * Find out what, if any, current view is currently in use.
  *
- * @return Drupal\views\ViewExecutable
+ * Note that this returns a reference, so be careful! You can unintentionally
+ * modify the $view object.
+ *
+ * @return \Drupal\views\ViewExecutable
+ *   The current view object.
  */
 function &views_get_current_view() {
   return views_set_current_view();
@@ -819,24 +819,27 @@ function &views_get_current_view() {
  * Implements hook_hook_info().
  */
 function views_hook_info() {
-  $hooks['views_data'] = array(
-    'group' => 'views',
-  );
-  $hooks['views_data_alter'] = array(
-    'group' => 'views',
-  );
-  $hooks['views_query_substitutions'] = array(
-    'group' => 'views',
-  );
-  $hooks['views_form_substitutions'] = array(
-    'group' => 'views',
-  );
-  $hooks['views_analyze'] = array(
-    'group' => 'views',
-  );
-  $hooks['views_data_alter'] = array(
-    'group' => 'views',
-  );
+  $hooks = array();
+
+  $hooks += array_fill_keys(array(
+    'views_data',
+    'views_data_alter',
+    'views_analyze',
+    'views_invalidate_cache',
+  ), array('group' => 'views'));
+
+  $hooks += array_fill_keys(array(
+    'views_query_substitutions',
+    'views_form_substitutions',
+    'views_pre_view',
+    'views_pre_build',
+    'views_post_build',
+    'views_pre_execute',
+    'views_post_execute',
+    'views_pre_render',
+    'views_post_render',
+    'views_query_alter',
+  ), array('group' => 'views_execution'));
 
   return $hooks;
 }
@@ -880,21 +883,26 @@ function views_library_info() {
 /**
  * Fetch a handler from the data cache.
  *
- * @param $table
- *   The name of the table this handler is from.
- * @param $field
- *   The name of the field this handler is from.
- * @param $type
+ * @param array $item
+ *   An associative array representing the handler to be retrieved:
+ *   - table: The name of the table containing the handler.
+ *   - field: The name of the field the handler represents.
+ *   - optional: (optional) Whether or not this handler is optional. If a
+ *     handler is missing and not optional, a debug message will be displayed.
+ *     Defaults to FALSE.
+ * @param string $type
  *   The type of handler. i.e, sort, field, argument, filter, relationship
- * @param $override
- *   Override the actual handler object with this class. Used for
- *   aggregation when the handler is redirected to the aggregation
- *   handler.
+ * @param string|null $override
+ *   (optional) Override the actual handler object with this plugin ID. Used for
+ *   aggregation when the handler is redirected to the aggregation handler.
  *
  * @return views_handler
  *   An instance of a handler object. May be views_handler_broken.
  */
-function views_get_handler($table, $field, $type, $override = NULL) {
+function views_get_handler($item, $type, $override = NULL) {
+  $table = $item['table'];
+  $field = $item['field'];
+  $optional = isset($item['optional']) ? $item['optional'] : FALSE;
   // Get the plugin manager for this type.
   $manager = Views::pluginManager($type);;
   $data = Views::viewsData()->get($table);
@@ -931,8 +939,11 @@ function views_get_handler($table, $field, $type, $override = NULL) {
     }
   }
 
+  if (!$optional) {
+    debug(t("Missing handler: @table @field @type", array('@table' => $table, '@field' => $field, '@type' => $type)));
+  }
+
   // Finally, use the 'broken' handler.
-  debug(t("Missing handler: @table @field @type", array('@table' => $table, '@field' => $field, '@type' => $type)));
   return $manager->createInstance('broken');
 }
 
@@ -955,13 +966,8 @@ function views_fetch_plugin_names($type, $key = NULL, $base = array()) {
   $plugins = array();
 
   foreach ($definitions as $id => $plugin) {
-    // Skip plugins that don't conform to our key.
-    if ($key && (empty($plugin['type']) || $plugin['type'] != $key)) {
-      continue;
-    }
-    // @todo While Views is providing on behalf of core modules, check to see
-    //   if they are enabled or not.
-    if (isset($plugin['module']) && !module_exists($plugin['module'])) {
+    // Skip plugins that don't conform to our key, if they have one.
+    if ($key && isset($plugin['display_types']) && !in_array($key, $plugin['display_types'])) {
       continue;
     }
 
@@ -975,8 +981,7 @@ function views_fetch_plugin_names($type, $key = NULL, $base = array()) {
     return $plugins;
   }
 
-  // fall-through
-  return array();
+  return $plugins;
 }
 
 /**
@@ -986,10 +991,9 @@ function views_fetch_plugin_names($type, $key = NULL, $base = array()) {
  *   An array of plugin definitions for all types.
  */
 function views_get_plugin_definitions() {
-  $container = drupal_container();
   $plugins = array();
   foreach (ViewExecutable::getPluginTypes() as $plugin_type) {
-    $plugins[$plugin_type] = $container->get("plugin.manager.views.$plugin_type")->getDefinitions();
+    $plugins[$plugin_type] = Views::pluginManager($plugin_type)->getDefinitions();
   }
 
   return $plugins;
@@ -1021,10 +1025,8 @@ function views_get_enabled_display_extenders() {
  * @endcode
  */
 function views_get_applicable_views($type) {
-  $container = drupal_container();
-
   // Get all display plugins which provides the type.
-  $display_plugins = $container->get('plugin.manager.views.display')->getDefinitions();
+  $display_plugins = Views::pluginManager('display')->getDefinitions();
   $ids = array();
   foreach ($display_plugins as $id => $definition) {
     if (!empty($definition[$type])) {
@@ -1032,13 +1034,13 @@ function views_get_applicable_views($type) {
     }
   }
 
-  $entity_ids = $container->get('entity.query')->get('view')
+  $entity_ids = Drupal::service('entity.query')->get('view')
     ->condition('status', TRUE)
     ->condition("display.*.display_plugin", $ids, 'IN')
     ->execute();
 
   $result = array();
-  foreach ($container->get('plugin.manager.entity')->getStorageController('view')->load($entity_ids) as $view) {
+  foreach (Drupal::service('plugin.manager.entity')->getStorageController('view')->load($entity_ids) as $view) {
     // Check each display to see if it meets the criteria and is enabled.
     $executable = $view->get('executable');
     $executable->initDisplay();
@@ -1063,7 +1065,7 @@ function views_get_all_views() {
  * Returns an array of all enabled views, as fully loaded $view objects.
  */
 function views_get_enabled_views() {
-  $query = drupal_container()->get('entity.query')->get('view')
+  $query = Drupal::entityQuery('view')
     ->condition('status', TRUE)
     ->execute();
 
@@ -1074,7 +1076,7 @@ function views_get_enabled_views() {
  * Returns an array of all disabled views, as fully loaded $view objects.
  */
 function views_get_disabled_views() {
-  $query = drupal_container()->get('entity.query')->get('view')
+  $query = Drupal::entityQuery('view')
     ->condition('status', FALSE)
     ->execute();
 
@@ -1140,7 +1142,7 @@ function views_get_views_as_options($views_only = FALSE, $filter = 'all', $exclu
     $id = $view->id();
     // Return only views.
     if ($views_only && $id != $exclude_view_name) {
-      $options[$id] = $view->getHumanName();
+      $options[$id] = $view->label();
     }
     // Return views with display ids.
     else {
@@ -1566,20 +1568,8 @@ function views_exposed_form_cache($views_name, $display_name, $form_output = NUL
  * Build a list of theme function names for use most everywhere.
  */
 function views_theme_functions($hook, ViewExecutable $view, $display = NULL) {
-  module_load_include('inc', 'views', 'views.theme');
+  Drupal::moduleHandler()->loadInclude('views', 'inc', 'views.theme');
   return _views_theme_functions($hook, $view, $display);
-}
-
-/**
- * Substitute current time; this works with cached queries.
- */
-function views_views_query_substitutions($view) {
-  return array(
-    '***CURRENT_VERSION***' => VERSION,
-    '***CURRENT_TIME***' => REQUEST_TIME,
-    '***CURRENT_LANGUAGE***' => language(LANGUAGE_TYPE_CONTENT)->langcode,
-    '***DEFAULT_LANGUAGE***' => language_default()->langcode,
-  );
 }
 
 /**

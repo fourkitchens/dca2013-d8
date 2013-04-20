@@ -109,14 +109,14 @@ Drupal.behaviors.machineName = {
           options: options
         };
         // If it is editable, append an edit link.
-        var $link = $('<span class="admin-link"><a href="#">' + Drupal.t('Edit') + '</a></span>').bind('click', eventData, clickEditHandler);
+        var $link = $('<span class="admin-link"><button type="button" class="link">' + Drupal.t('Edit') + '</button></span>').bind('click', eventData, clickEditHandler);
         $suffix.append(' ').append($link);
 
         // Preview the machine name in realtime when the human-readable name
         // changes, but only if there is no machine name yet; i.e., only upon
         // initial creation, not when editing.
         if ($target.val() === '') {
-          $source.bind('keyup.machineName change.machineName', eventData, machineNameHandler)
+          $source.bind('keyup.machineName change.machineName input.machineName', eventData, machineNameHandler)
           // Initialize machine name preview.
           .keyup();
         }

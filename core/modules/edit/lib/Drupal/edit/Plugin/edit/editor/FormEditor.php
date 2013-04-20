@@ -9,14 +9,14 @@ namespace Drupal\edit\Plugin\edit\editor;
 
 use Drupal\edit\EditorBase;
 use Drupal\Component\Annotation\Plugin;
-use Drupal\field\FieldInstance;
+use Drupal\field\Plugin\Core\Entity\FieldInstance;
 
 /**
  * Defines the "form" Create.js PropertyEditor widget.
  *
  * @Plugin(
  *   id = "form",
- *   jsClassName = "drupalFormWidget",
+ *   jsClassName = "formEditEditor",
  *   module = "edit"
  * )
  */
@@ -35,7 +35,7 @@ class FormEditor extends EditorBase {
   public function getAttachments() {
     return array(
       'library' => array(
-        array('edit', 'edit.editor.form'),
+        array('edit', 'edit.editorWidget.form'),
       ),
     );
   }

@@ -11,6 +11,7 @@ whole. The branch maintainers for Drupal 8 are:
 - Dries Buytaert 'dries' http://drupal.org/user/1
 - Nathaniel Catchpole 'catch' http://drupal.org/user/35733
 - Angela Byron 'webchick' http://drupal.org/user/24967
+- Alex Pott 'alexpott' http://drupal.org/user/157725
 
 Component maintainers
 ---------------------
@@ -28,6 +29,8 @@ Base system
 - Károly Négyesi 'chx' http://drupal.org/user/9446
 - Damien Tournoud 'DamZ' http://drupal.org/user/22211
 - Moshe Weitzman 'moshe weitzman' http://drupal.org/user/23
+- Kat Bailey 'katbailey' http://drupal.org/user/172987
+- Larry Garfield 'Crell' http://drupal.org/user/26398
 
 Batch system
 - Yves Chedemois 'yched' http://drupal.org/user/39567
@@ -66,7 +69,7 @@ Database system
     - Károly Négyesi 'chx' http://drupal.org/user/9446
 
 Database update system
-- Ashok Modi 'BTMash' http://drupal.org/user/60422
+- Károly Négyesi 'chx' http://drupal.org/user/9446
 
 Entity system
 - Wolfgang Ziegler 'fago' http://drupal.org/user/16747
@@ -131,11 +134,17 @@ Render system
 - Alex Bronstein 'effulgentsia' http://drupal.org/user/78040
 - Franz Heinzmann 'Frando' http://drupal.org/user/21850
 
+Routing system
+- Larry Garfield 'Crell' http://drupal.org/user/26398
+
 Theme system
-- Earl Miles 'merlinofchaos' http://drupal.org/user/26979
 - Alex Bronstein 'effulgentsia' http://drupal.org/user/78040
-- Joon Park 'dvessel' http://drupal.org/user/56782
 - John Albin Wilkins 'JohnAlbin' http://drupal.org/user/32095
+- Jen Lampton 'jenlampton' http://drupal.org/user/85586
+- Scott Reeves 'Cottser' http://drupal.org/user/1167326
+- Carl Wiedemann 'c4rl' http://drupal.org/user/235047
+- Steve Oliver 'steveoliver' http://drupal.org/user/42327
+- Fabian Franz 'Fabianx' http://drupal.org/user/693738
 
 Token system
 - Dave Reid 'davereid' http://drupal.org/user/53892
@@ -179,7 +188,7 @@ Module maintainers
 ------------------
 
 Aggregator module
-- ?
+- Paris Liakos 'rootatwc' http://drupal.org/user/1011436
 
 Block module
 - John Albin Wilkins 'JohnAlbin' http://drupal.org/user/32095

@@ -38,7 +38,9 @@ class StatisticsTokenReplaceTest extends StatisticsTestBase {
     $headers = array('Content-Type' => 'application/x-www-form-urlencoded');
     global $base_url;
     $stats_path = $base_url . '/' . drupal_get_path('module', 'statistics'). '/statistics.php';
-    drupal_http_request($stats_path, array('method' => 'POST', 'data' => $post, 'headers' => $headers, 'timeout' => 10000));
+    $client = \Drupal::httpClient();
+    $client->setConfig(array('curl.options' => array(CURLOPT_TIMEOUT => 10)));
+    $client->post($stats_path, $headers, $post)->send();
     $statistics = statistics_get($node->nid);
 
     // Generate and test tokens.
@@ -52,7 +54,7 @@ class StatisticsTokenReplaceTest extends StatisticsTestBase {
     $this->assertFalse(in_array(0, array_map('strlen', $tests)), 'No empty tokens generated.');
 
     foreach ($tests as $input => $expected) {
-      $output = token_replace($input, array('node' => $node), array('langcode' => $language_interface->langcode));
+      $output = \Drupal::token()->replace($input, array('node' => $node), array('langcode' => $language_interface->langcode));
       $this->assertEqual($output, $expected, format_string('Statistics token %token replaced.', array('%token' => $input)));
     }
   }

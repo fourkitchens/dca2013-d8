@@ -9,13 +9,13 @@ namespace Drupal\custom_block\Plugin\Core\Entity;
 
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityNG;
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Core\Entity\Annotation\EntityType;
 use Drupal\Core\Annotation\Translation;
 
 /**
  * Defines the custom block entity class.
  *
- * @Plugin(
+ * @EntityType(
  *   id = "custom_block",
  *   label = @Translation("Custom Block"),
  *   bundle_label = @Translation("Custom Block type"),
@@ -118,21 +118,21 @@ class CustomBlock extends EntityNG implements ContentEntityInterface {
   protected $theme;
 
   /**
-   * Implements Drupal\Core\Entity\EntityInterface::id().
+   * {@inheritdoc}
    */
   public function id() {
     return $this->id->value;
   }
 
   /**
-   * Implements Drupal\Core\Entity\EntityInterface::bundle().
+   * {@inheritdoc}
    */
   public function bundle() {
     return $this->type->value;
   }
 
   /**
-   * Overrides \Drupal\Core\Entity\Entity::createDuplicate().
+   * {@inheritdoc}
    */
   public function createDuplicate() {
     $duplicate = parent::createDuplicate();
@@ -142,7 +142,7 @@ class CustomBlock extends EntityNG implements ContentEntityInterface {
   }
 
   /**
-   * Overrides \Drupal\Core\Entity\Entity::getRevisionId().
+   * {@inheritdoc}
    */
   public function getRevisionId() {
     return $this->revision_id->value;
@@ -194,7 +194,7 @@ class CustomBlock extends EntityNG implements ContentEntityInterface {
   }
 
   /**
-   * Overrides \Drupal\Core\Entity\Entity::getRevisionId().
+   * {@inheritdoc}
    */
   public function uri() {
     return array(

@@ -7,13 +7,13 @@
 
 namespace Drupal\system\Tests\Form;
 
-use Drupal\system\Tests\System\SystemConfigFormBase;
+use Drupal\system\Tests\System\SystemConfigFormTestBase;
 use Drupal\form_test\FormTestObject;
 
 /**
  * Tests building a form from an object.
  */
-class FormObjectTest extends SystemConfigFormBase {
+class FormObjectTest extends SystemConfigFormTestBase {
 
   /**
    * Modules to enable.
@@ -33,7 +33,7 @@ class FormObjectTest extends SystemConfigFormBase {
   protected function setUp() {
     parent::setUp();
 
-    $this->form_id = new FormTestObject();
+    $this->form = new FormTestObject();
     $this->values = array(
       'bananas' => array(
         '#value' => $this->randomString(10),

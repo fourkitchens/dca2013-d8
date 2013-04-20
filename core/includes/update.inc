@@ -9,6 +9,7 @@
  */
 
 use Drupal\Component\Graph\Graph;
+use Drupal\Component\Utility\Settings;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\ConfigException;
 use Drupal\Core\DrupalKernel;
@@ -97,18 +98,24 @@ function update_prepare_d8_bootstrap() {
   // During the bootstrap to DRUPAL_BOOTSTRAP_PAGE_CACHE, code will try to read
   // the cache but the cache tables are not compatible yet. Use the Null backend
   // by default to avoid exceptions.
-  $GLOBALS['conf']['cache_classes'] = array('cache' => 'Drupal\Core\Cache\NullBackend');
+  $settings = settings()->getAll();
+  $settings['cache']['default'] = 'cache.backend.memory';
+  new Settings($settings);
 
   // Enable UpdateBundle service overrides.
   $GLOBALS['conf']['container_bundles'][] = 'Drupal\Core\DependencyInjection\UpdateBundle';
+
+  // Check whether settings.php needs to be rewritten.
+  $settings_exist = !empty($GLOBALS['config_directories']);
+
+  if (!$settings_exist || !is_dir(config_get_config_directory('active')) || !is_dir(config_get_config_directory('staging'))) {
+    drupal_install_config_directories();
+  }
 
   // Bootstrap the kernel.
   // Do not attempt to dump and write it.
   $kernel = new DrupalKernel('update', FALSE, drupal_classloader(), FALSE);
   $kernel->boot();
-
-  // Check whether settings.php needs to be rewritten.
-  $settings_exist = !empty($GLOBALS['config_directories']);
 
   // If any of the required settings needs to be written, then settings.php
   // needs to be writable.
@@ -129,24 +136,6 @@ function update_prepare_d8_bootstrap() {
       );
     }
     update_extra_requirements($requirements);
-  }
-
-  if (!$settings_exist || !is_dir(config_get_config_directory('active')) || !is_dir(config_get_config_directory('staging'))) {
-    // @todo Race-condition: drupal_install_config_directories() calls into
-    //   install_ensure_config_directory(), which calls into
-    //   file_prepare_directory(), whichs calls into file_get_stream_wrappers(),
-    //   which attempts to invoke hooks with a non-existing module/hook system.
-
-    include_once DRUPAL_ROOT . '/core/includes/module.inc';
-    include_once DRUPAL_ROOT . '/core/includes/cache.inc';
-    $module_handler = drupal_container()->get('module_handler');
-    $module_handler->setModuleList(array('system' => 'core/modules/system/system.module'));
-    $module_handler->load('system');
-    // Ensure the configuration directories exist and are writable, or create
-    // them. If the directories have not been specified in settings.php and
-    // created manually already, and either directory cannot be created by the
-    // web server, an exception will be thrown, halting the update.
-    drupal_install_config_directories();
   }
 
   // Bootstrap the database.
@@ -343,7 +332,7 @@ function update_prepare_d8_bootstrap() {
       $disabled_modules = config('system.module.disabled');
       $theme_config = config('system.theme');
       $disabled_themes = config('system.theme.disabled');
-      $schema_store = drupal_container()->get('keyvalue')->get('system.schema');
+      $schema_store = Drupal::keyValue('system.schema');
 
       // Load system.module, because update_prepare_d8_bootstrap() is called in
       // the initial minimal update.php bootstrap that performs the core
@@ -399,6 +388,7 @@ function update_prepare_d8_bootstrap() {
       $disabled_modules->save();
       $theme_config->save();
       $disabled_themes->save();
+      Drupal::service('kernel')->updateModules($sorted_with_filenames, $sorted_with_filenames);
 
       // Migrate the private key to state. This is used to create the token for
       // the upgrade batch so needs to be be done before the upgrade has begun.
@@ -434,8 +424,11 @@ function update_prepare_d8_bootstrap() {
     }
   }
   // Now remove the cache override.
-  unset($GLOBALS['conf']['cache_classes']['cache']);
-  drupal_static_reset('cache');
+  $settings = settings()->getAll();
+  unset($settings['cache']['default']);
+  new Settings($settings);
+  $kernel = new DrupalKernel('update', FALSE, drupal_classloader(), FALSE);
+  $kernel->boot();
 }
 
 /**
@@ -642,6 +635,44 @@ function update_fix_d8_requirements() {
     // picture upgrade path.
     update_module_enable(array('file'));
 
+    $schema = array(
+      'description' => 'Generic key/value storage table with an expiration.',
+      'fields' => array(
+        'collection' => array(
+          'description' => 'A named collection of key and value pairs.',
+          'type' => 'varchar',
+          'length' => 128,
+          'not null' => TRUE,
+          'default' => '',
+        ),
+        'name' => array(
+          // KEY is an SQL reserved word, so use 'name' as the key's field name.
+          'description' => 'The key of the key/value pair.',
+          'type' => 'varchar',
+          'length' => 128,
+          'not null' => TRUE,
+          'default' => '',
+        ),
+        'value' => array(
+          'description' => 'The value of the key/value pair.',
+          'type' => 'blob',
+          'not null' => TRUE,
+          'size' => 'big',
+        ),
+        'expire' => array(
+          'description' => 'The time since Unix epoch in seconds when this item expires. Defaults to the maximum possible time.',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 2147483647,
+        ),
+      ),
+      'primary key' => array('collection', 'name'),
+      'indexes' => array(
+        'all' => array('name', 'collection', 'expire'),
+      ),
+    );
+    db_create_table('key_value_expire', $schema);
+
     update_variable_set('update_d8_requirements', TRUE);
   }
 }
@@ -663,7 +694,7 @@ function update_fix_d8_requirements() {
  *   if the module was not installed before.
  */
 function update_module_enable(array $modules, $schema_version = 0) {
-  $schema_store = drupal_container()->get('keyvalue')->get('system.schema');
+  $schema_store = Drupal::keyValue('system.schema');
   $old_schema = array();
   foreach ($modules as $module) {
     // Check for initial schema and install it. The schema version of a newly
@@ -1237,7 +1268,7 @@ function update_retrieve_dependencies() {
   $return = array();
   // Get a list of installed modules, arranged so that we invoke their hooks in
   // the same order that module_invoke_all() does.
-  foreach (drupal_container()->get('keyvalue')->get('system.schema')->getAll() as $module => $schema) {
+  foreach (Drupal::keyValue('system.schema')->getAll() as $module => $schema) {
     if ($schema == SCHEMA_UNINSTALLED) {
       // Nothing to upgrade.
       continue;

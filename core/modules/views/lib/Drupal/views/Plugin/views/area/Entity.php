@@ -9,7 +9,7 @@ namespace Drupal\views\Plugin\views\area;
 
 use Drupal\views\Plugin\views\display\DisplayPluginBase;
 use Drupal\views\ViewExecutable;
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 use Drupal\views\Plugin\views\area\AreaPluginBase;
 
 /**
@@ -17,10 +17,7 @@ use Drupal\views\Plugin\views\area\AreaPluginBase;
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "entity",
- *   module = "views"
- * )
+ * @PluginID("entity")
  */
 class Entity extends AreaPluginBase {
 
@@ -103,13 +100,11 @@ class Entity extends AreaPluginBase {
       }
       $entity_id = $this->globalTokenReplace($entity_id);
       if ($entity = entity_load($this->entityType, $entity_id)) {
-        $build = entity_view($entity, $this->options['view_mode']);
-        // @todo Support to just return a render array.
-        return drupal_render($build);
+        return entity_view($entity, $this->options['view_mode']);
       }
     }
 
-    return '';
+    return array();
   }
 
 }

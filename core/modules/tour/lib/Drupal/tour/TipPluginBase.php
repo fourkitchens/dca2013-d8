@@ -8,7 +8,6 @@
 namespace Drupal\tour;
 
 use Drupal\Component\Plugin\PluginBase;
-use Drupal\Component\Plugin\Discovery\DiscoveryInterface;
 use Drupal\tour\TipPluginInterface;
 
 /**
@@ -36,16 +35,6 @@ abstract class TipPluginBase extends PluginBase implements TipPluginInterface {
    * @var array
    */
   protected $attributes;
-
-  /**
-   * Overrides \Drupal\Component\Plugin\PluginBase::__construct().
-   */
-  public function __construct(array $configuration, $plugin_id, DiscoveryInterface $discovery) {
-    parent::__construct($configuration, $plugin_id, $discovery);
-
-    $this->definition = $this->discovery->getDefinition($plugin_id);
-    $this->module = $this->definition['module'];
-  }
 
   /**
    * Implements \Drupal\tour\TipPluginInterface::getLabel().

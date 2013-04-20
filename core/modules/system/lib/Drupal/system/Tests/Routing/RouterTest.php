@@ -57,9 +57,13 @@ class RouterTest extends WebTestBase {
    * Confirms that placeholders in paths work correctly.
    */
   public function testControllerPlaceholders() {
-    $value = $this->randomName();
-    $this->drupalGet('router_test/test3/' . $value);
-    $this->assertRaw($value, 'The correct string was returned because the route was successful.');
+    // Test with 0 and a random value.
+    $values = array("0", $this->randomName());
+    foreach ($values as $value) {
+      $this->drupalGet('router_test/test3/' . $value);
+      $this->assertResponse(200);
+      $this->assertRaw($value, 'The correct string was returned because the route was successful.');
+    }
 
     // Confirm that the page wrapping is being added, so we're not getting a
     // raw body returned.
@@ -75,7 +79,25 @@ class RouterTest extends WebTestBase {
    */
   public function testControllerPlaceholdersDefaultValues() {
     $this->drupalGet('router_test/test4');
+    $this->assertResponse(200);
     $this->assertRaw('narf', 'The correct string was returned because the route was successful.');
+
+    // Confirm that the page wrapping is being added, so we're not getting a
+    // raw body returned.
+    $this->assertRaw('</html>', 'Page markup was found.');
+
+    // In some instances, the subrequest handling may get confused and render
+    // a page inception style.  This test verifies that is not happening.
+    $this->assertNoPattern('#</body>.*</body>#s', 'There was no double-page effect from a misrendered subrequest.');
+  }
+
+  /**
+   * Confirms that default placeholders in paths work correctly.
+   */
+  public function testControllerPlaceholdersDefaultValuesProvided() {
+    $this->drupalGet('router_test/test4/barf');
+    $this->assertResponse(200);
+    $this->assertRaw('barf', 'The correct string was returned because the route was successful.');
 
     // Confirm that the page wrapping is being added, so we're not getting a
     // raw body returned.
@@ -102,4 +124,41 @@ class RouterTest extends WebTestBase {
     $this->assertResponse(200);
     $this->assertRaw('test5', 'The correct string was returned because the route was successful.');
   }
+
+  /**
+   * Checks that a request with text/html response gets rendered as a page.
+   */
+  public function testControllerResolutionPage() {
+    $this->drupalGet('/router_test/test10');
+
+    $this->assertRaw('abcde', 'Correct body was found.');
+
+    // Confirm that the page wrapping is being added, so we're not getting a
+    // raw body returned.
+    $this->assertRaw('</html>', 'Page markup was found.');
+
+    // In some instances, the subrequest handling may get confused and render
+    // a page inception style. This test verifies that is not happening.
+    $this->assertNoPattern('#</body>.*</body>#s', 'There was no double-page effect from a misrendered subrequest.');
+  }
+
+  /**
+   * Checks that an ajax request gets rendered as an Ajax response, by mime.
+   *
+   * @todo This test will not work until the Ajax enhancer is corrected. However,
+   *   that is dependent on fixes to the Ajax system. Re-enable this test once
+   *   http://drupal.org/node/1938980 is fixed.
+   */
+  /*
+  public function testControllerResolutionAjax() {
+    // This will fail with a JSON parse error if the request is not routed to
+    // The correct controller.
+    $this->drupalGetAJAX('/router_test/test10');
+
+    $this->assertEqual($this->drupalGetHeader('Content-Type'), 'application/json', 'Correct mime content type was returned');
+
+    $this->assertRaw('abcde', 'Correct body was found.');
+  }
+  */
+
 }

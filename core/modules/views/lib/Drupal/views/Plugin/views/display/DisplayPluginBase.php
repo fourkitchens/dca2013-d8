@@ -7,6 +7,7 @@
 
 namespace Drupal\views\Plugin\views\display;
 
+use Drupal\views\Plugin\views\area\AreaPluginBase;
 use Drupal\views\ViewExecutable;
 use \Drupal\views\Plugin\views\PluginBase;
 use Drupal\views\Views;
@@ -394,7 +395,7 @@ abstract class DisplayPluginBase extends PluginBase {
       'css_class' => array('css_class'),
       'use_ajax' => array('use_ajax'),
       'hide_attachment_summary' => array('hide_attachment_summary'),
-      'hide_admin_links' => array('hide_admin_links'),
+      'show_admin_links' => array('show_admin_links'),
       'group_by' => array('group_by'),
       'query' => array('query'),
       'use_more' => array('use_more', 'use_more_always', 'use_more_text'),
@@ -457,7 +458,7 @@ abstract class DisplayPluginBase extends PluginBase {
           'display_description' => FALSE,
           'use_ajax' => TRUE,
           'hide_attachment_summary' => TRUE,
-          'hide_admin_links' => FALSE,
+          'show_admin_links' => TRUE,
           'pager' => TRUE,
           'use_more' => TRUE,
           'use_more_always' => TRUE,
@@ -512,8 +513,8 @@ abstract class DisplayPluginBase extends PluginBase {
         'default' => FALSE,
         'bool' => TRUE,
       ),
-      'hide_admin_links' => array(
-        'default' => FALSE,
+      'show_admin_links' => array(
+        'default' => TRUE,
         'bool' => TRUE,
       ),
       'use_more' => array(
@@ -875,11 +876,10 @@ abstract class DisplayPluginBase extends PluginBase {
           $handler_type = $type;
         }
 
-        $handler = views_get_handler($info['table'], $info['field'], $handler_type, $override);
-        if ($handler) {
+        if ($handler = views_get_handler($info, $handler_type, $override)) {
           // Special override for area types so they know where they come from.
-          if ($handler_type == 'area') {
-            $handler->handler_type = $type;
+          if ($handler instanceof AreaPluginBase) {
+            $handler->areaType = $type;
           }
 
           $handler->init($this->view, $this, $info);
@@ -909,12 +909,7 @@ abstract class DisplayPluginBase extends PluginBase {
   public function getFieldLabels($groupable_only = FALSE) {
     $options = array();
     foreach ($this->getHandlers('relationship') as $relationship => $handler) {
-      if ($label = $handler->label()) {
-        $relationships[$relationship] = $label;
-      }
-      else {
-        $relationships[$relationship] = $handler->adminLabel();
-      }
+      $relationships[$relationship] = $handler->adminLabel();
     }
 
     foreach ($this->getHandlers('field') as $id => $handler) {
@@ -1068,8 +1063,8 @@ abstract class DisplayPluginBase extends PluginBase {
     $display_comment = check_plain(drupal_substr($this->getOption('display_comment'), 0, 10));
     $options['display_comment'] = array(
       'category' => 'other',
-      'title' => t('Comment'),
-      'value' => !empty($display_comment) ? $display_comment : t('No comment'),
+      'title' => t('Administrative comment'),
+      'value' => !empty($display_comment) ? $display_comment : t('None'),
       'desc' => t('Comment or document this display.'),
     );
 
@@ -1138,10 +1133,10 @@ abstract class DisplayPluginBase extends PluginBase {
       );
     }
     if (!isset($this->definition['contextual links locations']) || !empty($this->definition['contextual links locations'])) {
-      $options['hide_admin_links'] = array(
+      $options['show_admin_links'] = array(
         'category' => 'other',
-        'title' => t('Hide contextual links'),
-        'value' => $this->getOption('hide_admin_links') ? t('Yes') : t('No'),
+        'title' => t('Display contextual links'),
+        'value' => $this->getOption('show_admin_links') ? t('Yes') : t('No'),
         'desc' => t('Change whether or not to display contextual links for this view.'),
       );
     }
@@ -1202,7 +1197,7 @@ abstract class DisplayPluginBase extends PluginBase {
         '***DEFAULT_LANGUAGE***' => t("Default site language"),
         LANGUAGE_NOT_SPECIFIED => t('Language neutral'),
     );
-    if (module_exists('language')) {
+    if (\Drupal::moduleHandler()->moduleExists('language')) {
       $languages = array_merge($languages, language_list());
     }
     $options['field_langcode'] = array(
@@ -1348,7 +1343,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $form['#title'] .= t('The machine name of this display');
         $form['display_id'] = array(
           '#type' => 'textfield',
-          '#description' => t('This is machine name of the display.'),
+          '#title' => t('Machine name of the display'),
           '#default_value' => !empty($this->display['new_id']) ? $this->display['new_id'] : $this->display['id'],
           '#required' => TRUE,
           '#size' => 64,
@@ -1357,23 +1352,22 @@ abstract class DisplayPluginBase extends PluginBase {
       case 'display_title':
         $form['#title'] .= t('The name and the description of this display');
         $form['display_title'] = array(
-          '#title' => t('Name'),
+          '#title' => t('Administrative name'),
           '#type' => 'textfield',
-          '#description' => t('This name will appear only in the administrative interface for the View.'),
           '#default_value' => $this->display['display_title'],
         );
         $form['display_description'] = array(
-          '#title' => t('Description'),
+          '#title' => t('Administrative description'),
           '#type' => 'textfield',
-          '#description' => t('This description will appear only in the administrative interface for the View.'),
           '#default_value' => $this->getOption('display_description'),
         );
         break;
       case 'display_comment':
-        $form['#title'] .= t("This display's comments");
+        $form['#title'] .= t('Administrative comment');
         $form['display_comment'] = array(
           '#type' => 'textarea',
-          '#description' => t('This value will be seen and used only within the Views UI and can be used to document this display. You can use this to provide notes for other or future maintainers of your site about how or why this display is configured.'),
+          '#title' => t('Administrative comment'),
+          '#description' => t('This description will only be seen within the administrative interface and can be used to document this display.'),
           '#default_value' => $this->getOption('display_comment'),
         );
         break;
@@ -1389,35 +1383,34 @@ abstract class DisplayPluginBase extends PluginBase {
         $form['#title'] .= t('CSS class');
         $form['css_class'] = array(
           '#type' => 'textfield',
-          '#description' => t('The CSS class names will be added to the view. This enables you to use specific CSS code for each view. You may define multiples classes separated by spaces.'),
+          '#title' => t('CSS class name(s)'),
+          '#description' => t('Multiples classes should be separated by spaces.'),
           '#default_value' => $this->getOption('css_class'),
         );
         break;
       case 'use_ajax':
         $form['#title'] .= t('Use AJAX when available to load this view');
-        $form['description'] = array(
-          '#markup' => '<div class="description form-item">' . t('If set, this view will use an AJAX mechanism for paging, table sorting and exposed filters. This means the entire page will not refresh. It is not recommended that you use this if this view is the main content of the page as it will prevent deep linking to specific pages, but it is very useful for side content.') . '</div>',
-        );
         $form['use_ajax'] = array(
-          '#type' => 'radios',
-          '#options' => array(1 => t('Yes'), 0 => t('No')),
+          '#description' => t('When viewing a view, things like paging, table sorting, and exposed filters will not trigger a page refresh.'),
+          '#type' => 'checkbox',
+          '#title' => t('Use AJAX'),
           '#default_value' => $this->getOption('use_ajax') ? 1 : 0,
         );
         break;
       case 'hide_attachment_summary':
         $form['#title'] .= t('Hide attachments when displaying a contextual filter summary');
         $form['hide_attachment_summary'] = array(
-          '#type' => 'radios',
-          '#options' => array(1 => t('Yes'), 0 => t('No')),
+          '#type' => 'checkbox',
+          '#title' => t('Hide attachments in summary'),
           '#default_value' => $this->getOption('hide_attachment_summary') ? 1 : 0,
         );
         break;
-      case 'hide_admin_links':
-        $form['#title'] .= t('Hide contextual links on this view.');
-        $form['hide_admin_links'] = array(
+      case 'show_admin_links':
+        $form['#title'] .= t('Show contextual links on this view.');
+        $form['show_admin_links'] = array(
           '#type' => 'radios',
-          '#options' => array(1 => t('Yes'), 0 => t('No')),
-          '#default_value' => $this->getOption('hide_admin_links') ? 1 : 0,
+          '#options' => array(0 => t('No'), 1 => t('Yes')),
+          '#default_value' => $this->getOption('show_admin_links'),
         );
       break;
       case 'use_more':
@@ -1471,7 +1464,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $access = $this->getOption('access');
         $form['access']['type'] =  array(
           '#type' => 'radios',
-          '#options' => views_fetch_plugin_names('access', NULL, array($this->view->storage->get('base_table'))),
+          '#options' => views_fetch_plugin_names('access', $this->getType(), array($this->view->storage->get('base_table'))),
           '#default_value' => $access['type'],
         );
 
@@ -1506,7 +1499,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $cache = $this->getOption('cache');
         $form['cache']['type'] =  array(
           '#type' => 'radios',
-          '#options' => views_fetch_plugin_names('cache', NULL, array($this->view->storage->get('base_table'))),
+          '#options' => views_fetch_plugin_names('cache', $this->getType(), array($this->view->storage->get('base_table'))),
           '#default_value' => $cache['type'],
         );
 
@@ -1597,7 +1590,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $style_plugin = $this->getPlugin('style');
         $form['style'] =  array(
           '#type' => 'radios',
-          '#options' => views_fetch_plugin_names('style', $this->getStyleType(), array($this->view->storage->get('base_table'))),
+          '#options' => views_fetch_plugin_names('style', $this->getType(), array($this->view->storage->get('base_table'))),
           '#default_value' => $style_plugin->definition['id'],
           '#description' => t('If the style you choose has settings, be sure to click the settings button that will appear next to it in the View summary.'),
         );
@@ -1639,7 +1632,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $row_plugin_instance = $this->getPlugin('row');
         $form['row'] =  array(
           '#type' => 'radios',
-          '#options' => views_fetch_plugin_names('row', $this->getStyleType(), array($this->view->storage->get('base_table'))),
+          '#options' => views_fetch_plugin_names('row', $this->getType(), array($this->view->storage->get('base_table'))),
           '#default_value' => $row_plugin_instance->definition['id'],
         );
 
@@ -1954,7 +1947,7 @@ abstract class DisplayPluginBase extends PluginBase {
         $exposed_form = $this->getOption('exposed_form');
         $form['exposed_form']['type'] =  array(
           '#type' => 'radios',
-          '#options' => views_fetch_plugin_names('exposed_form', NULL, array($this->view->storage->get('base_table'))),
+          '#options' => views_fetch_plugin_names('exposed_form', $this->getType(), array($this->view->storage->get('base_table'))),
           '#default_value' => $exposed_form['type'],
         );
 
@@ -2219,8 +2212,8 @@ abstract class DisplayPluginBase extends PluginBase {
         break;
       case 'use_ajax':
       case 'hide_attachment_summary':
-      case 'hide_admin_links':
-        $this->setOption($section, (bool)$form_state['values'][$section]);
+      case 'show_admin_links':
+        $this->setOption($section, (bool) $form_state['values'][$section]);
         break;
       case 'use_more':
         $this->setOption($section, intval($form_state['values'][$section]));
@@ -2466,10 +2459,22 @@ abstract class DisplayPluginBase extends PluginBase {
     return $element;
   }
 
+  /**
+   * Render one of the available areas.
+   *
+   * @param string $area
+   *   Identifier of the specific area to render.
+   * @param bool $empty
+   *   (optional) Indicator whether or not the view result is empty. Defaults to
+   *   FALSE
+   *
+   * @return array
+   *   A render array for the given area.
+   */
   public function renderArea($area, $empty = FALSE) {
-    $return = '';
-    foreach ($this->getHandlers($area) as $area) {
-      $return .= $area->render($empty);
+    $return = array();
+    foreach ($this->getHandlers($area) as $key => $area_handler) {
+      $return[$key] = $area_handler->render($empty);
     }
     return $return;
   }
@@ -2518,9 +2523,7 @@ abstract class DisplayPluginBase extends PluginBase {
       $extender->pre_execute();
     }
 
-    if ($this->getOption('hide_admin_links')) {
-      $this->view->hide_admin_links = TRUE;
-    }
+    $this->view->setShowAdminLinks($this->getOption('show_admin_links'));
   }
 
   /**
@@ -2536,15 +2539,25 @@ abstract class DisplayPluginBase extends PluginBase {
    * some other AJAXy reason.
    */
   function preview() {
-    $element = $this->view->render();
-    return drupal_render($element);
+    return $this->view->render();
   }
 
   /**
-   * Displays can require a certain type of style plugin. By default, they will
-   * be 'normal'.
+   * Returns the display type that this display requires.
+   *
+   * This can be used for filtering views plugins. E.g. if a plugin category of
+   * 'foo' is specified, only plugins with no 'types' declared or 'types'
+   * containing 'foo'. If you have a type of bar, this plugin will not be used.
+   * This is applicable for style, row, access, cache, and exposed_form plugins.
+   *
+   * @return string
+   *   The required display type. Defaults to 'normal'.
+   *
+   * @see views_fetch_plugin_names()
    */
-  protected function getStyleType() { return 'normal'; }
+  protected function getType() {
+    return 'normal';
+  }
 
   /**
    * Make sure the display and all associated handlers are valid.

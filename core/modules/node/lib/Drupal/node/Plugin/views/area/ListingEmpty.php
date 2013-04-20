@@ -7,7 +7,7 @@
 
 namespace Drupal\node\Plugin\views\area;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 use Drupal\views\Plugin\views\area\AreaPluginBase;
 
 /**
@@ -15,10 +15,7 @@ use Drupal\views\Plugin\views\area\AreaPluginBase;
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "node_listing_empty",
- *   module = "node"
- * )
+ * @PluginID("node_listing_empty")
  */
 class ListingEmpty extends AreaPluginBase {
 
@@ -37,8 +34,9 @@ class ListingEmpty extends AreaPluginBase {
         ) ,
         '#access' => _node_add_access()
       );
-      return drupal_render($element);
+      return $element;
     }
+    return array();
   }
 
 }

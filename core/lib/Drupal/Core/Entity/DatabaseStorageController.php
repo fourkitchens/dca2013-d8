@@ -290,7 +290,7 @@ class DatabaseStorageController implements EntityStorageControllerInterface {
    */
   public function loadByProperties(array $values = array()) {
     // Build a query to fetch the entity IDs.
-    $entity_query = entity_query($this->entityType);
+    $entity_query = \Drupal::entityQuery($this->entityType);
     $this->buildPropertyQuery($entity_query, $values);
     $result = $entity_query->execute();
     return $result ? $this->load($result) : array();
@@ -320,8 +320,7 @@ class DatabaseStorageController implements EntityStorageControllerInterface {
    * being loaded needs to be augmented with additional data from another
    * table, such as loading node type into comments or vocabulary machine name
    * into terms, however it can also support $conditions on different tables.
-   * See Drupal\comment\CommentStorageController::buildQuery() or
-   * Drupal\taxonomy\TermStorageController::buildQuery() for examples.
+   * See Drupal\comment\CommentStorageController::buildQuery() for an example.
    *
    * @param array|null $ids
    *   An array of entity IDs, or NULL to load all entities.

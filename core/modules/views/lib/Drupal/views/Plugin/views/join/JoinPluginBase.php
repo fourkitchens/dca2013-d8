@@ -6,8 +6,7 @@
  */
 
 namespace Drupal\views\Plugin\views\join;
-use Drupal\Component\Plugin\PluginBase;
-use Drupal\Component\Plugin\Discovery\DiscoveryInterface;
+use Drupal\Core\Plugin\ContainerFactoryPluginBase;
 
 /**
  * @defgroup views_join_handlers Views join handlers
@@ -50,7 +49,7 @@ use Drupal\Component\Plugin\Discovery\DiscoveryInterface;
  *
  * Extensions of this class can be used to create more interesting joins.
  */
-class JoinPluginBase extends PluginBase {
+class JoinPluginBase extends ContainerFactoryPluginBase {
 
   /**
    * The table to join (right table).
@@ -143,8 +142,8 @@ class JoinPluginBase extends PluginBase {
   /**
    * Constructs a Drupal\views\Plugin\views\join\JoinPluginBase object.
    */
-  public function __construct(array $configuration, $plugin_id, DiscoveryInterface $discovery) {
-    parent::__construct($configuration, $plugin_id, $discovery);
+  public function __construct(array $configuration, $plugin_id, array $plugin_definition) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
     // Merge in some default values.
     $configuration += array(
       'type' => 'LEFT',

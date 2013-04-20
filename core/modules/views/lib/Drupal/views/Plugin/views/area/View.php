@@ -7,16 +7,14 @@
 
 namespace Drupal\views\Plugin\views\area;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Views area handlers. Insert a view inside of an area.
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "view"
- * )
+ * @PluginID("view")
  */
 class View extends AreaPluginBase {
 
@@ -56,7 +54,7 @@ class View extends AreaPluginBase {
   }
 
   /**
-   * Render the area
+   * Implements \Drupal\views\Plugin\views\area\AreaPluginBase::render().
    */
   function render($empty = FALSE) {
     if (!empty($this->options['view_to_insert'])) {
@@ -64,7 +62,7 @@ class View extends AreaPluginBase {
 
       $view = views_get_view($view_name);
       if (empty($view) || !$view->access($display_id)) {
-        return;
+        return array();
       }
       $view->setDisplay($display_id);
 
@@ -86,7 +84,7 @@ class View extends AreaPluginBase {
         }
       }
     }
-    return '';
+    return array();
   }
 
 }

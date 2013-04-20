@@ -284,6 +284,9 @@ class ConfigStorageController implements EntityStorageControllerInterface {
   public function create(array $values) {
     $class = $this->entityInfo['class'];
 
+    // Set default language to site default if not provided.
+    $values += array('langcode' => language_default()->langcode);
+
     $entity = new $class($values, $this->entityType);
     // Mark this entity as new, so isNew() returns TRUE. This does not check
     // whether a configuration entity with the same ID (if any) already exists.
@@ -325,7 +328,7 @@ class ConfigStorageController implements EntityStorageControllerInterface {
       $config = config($this->getConfigPrefix() . $entity->id());
       $config->delete();
 
-      // Remove the entity from the manifest file. Entity id's can contain a dot
+      // Remove the entity from the manifest file. Entity IDs can contain a dot
       // so we can not use Config::clear() to remove the entity from the
       // manifest.
       $manifest = config('manifest.' . $this->entityInfo['config_prefix']);
@@ -364,18 +367,18 @@ class ConfigStorageController implements EntityStorageControllerInterface {
     $config = config($prefix . $id);
     $is_new = $config->isNew();
 
+    if (!$is_new && !isset($entity->original)) {
+      $this->resetCache(array($id));
+      $result = $this->load(array($id));
+      $entity->original = reset($result);
+    }
+
     if ($id !== $entity->id()) {
       // Renaming a config object needs to cater for:
       // - Storage controller needs to access the original object.
       // - The object needs to be renamed/copied in ConfigFactory and reloaded.
       // - All instances of the object need to be renamed.
       drupal_container()->get('config.factory')->rename($prefix . $id, $prefix . $entity->id());
-    }
-
-    if (!$is_new && !isset($entity->original)) {
-      $this->resetCache(array($id));
-      $result = $this->load(array($id));
-      $entity->original = reset($result);
     }
 
     $this->preSave($entity);
@@ -403,13 +406,25 @@ class ConfigStorageController implements EntityStorageControllerInterface {
       $this->invokeHook('insert', $entity);
     }
 
-    // Add this entity to the manifest file if necessary.
+    $update_manifest = FALSE;
     $config = config('manifest.' . $this->entityInfo['config_prefix']);
     $manifest = $config->get();
-    if (!in_array($this->getConfigPrefix() . $entity->id(), $manifest)) {
+    // If the save operation resulted in a rename remove the old entity id from
+    // the manifest file.
+    if ($id !== $entity->id()) {
+      // Entity IDs can contain a dot so we can not use Config::clear() to
+      // remove the entity from the manifest.
+      unset($manifest[$id]);
+      $update_manifest = TRUE;
+    }
+    // Add this entity to the manifest file if necessary.
+    if (!isset($manifest[$entity->id()])) {
       $manifest[$entity->id()] = array(
         'name' => $this->getConfigPrefix() . $entity->id(),
       );
+      $update_manifest = TRUE;
+    }
+    if ($update_manifest) {
       $config->setData($manifest)->save();
     }
 
@@ -432,18 +447,13 @@ class ConfigStorageController implements EntityStorageControllerInterface {
    * Used after the entity is saved, but before invoking the insert or update
    * hook.
    *
+   * @param EntityInterface $entity
+   *   The entity to act on.
    * @param $update
    *   (bool) TRUE if the entity has been updated, or FALSE if it has been
    *   inserted.
    */
   protected function postSave(EntityInterface $entity, $update) {
-    // Delete the original configuration entity, in case the entity ID was
-    // renamed.
-    if ($update && !empty($entity->original) && $entity->{$this->idKey} !== $entity->original->{$this->idKey}) {
-      // @todo This should just delete the original config object without going
-      //   through the API, no?
-      $entity->original->delete();
-    }
   }
 
   /**

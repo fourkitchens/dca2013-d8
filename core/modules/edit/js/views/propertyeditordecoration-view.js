@@ -32,7 +32,8 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
    *   - editor: the editor object with an 'options' object that has these keys:
    *      * entity: the VIE entity for the property.
    *      * property: the predicate of the property.
-   *      * widget: the parent EditableeEntity widget.
+   *      * widget: the parent EditableEntity widget.
+   *      * editorName: the name of the PropertyEditor widget
    *   - toolbarId: the ID attribute of the toolbar as rendered in the DOM.
    */
   initialize: function(options) {
@@ -40,6 +41,7 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
     this.toolbarId = options.toolbarId;
 
     this.predicate = this.editor.options.property;
+    this.editorName = this.editor.options.editorName;
 
     // Only start listening to events as soon as we're no longer in the 'inactive' state.
     this.undelegateEvents();
@@ -53,6 +55,9 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
       case 'inactive':
         if (from !== null) {
           this.undecorate();
+          if (from === 'invalid') {
+            this._removeValidationErrors();
+          }
         }
         break;
       case 'candidate':
@@ -61,6 +66,9 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
           this.stopHighlight();
           if (from !== 'highlighted') {
             this.stopEdit();
+            if (from === 'invalid') {
+              this._removeValidationErrors();
+            }
           }
         }
         break;
@@ -81,6 +89,9 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
       case 'changed':
         break;
       case 'saving':
+        if (from === 'invalid') {
+          this._removeValidationErrors();
+        }
         break;
       case 'saved':
         break;
@@ -201,7 +212,8 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
       this._widthAttributeIsEmpty = true;
       this.$el
         .addClass('edit-animate-disable-width')
-        .css('width', this.$el.width());
+        .css('width', this.$el.width())
+        .css('background-color', this._getBgColor(this.$el));
     }
 
     // 2) Add padding; use animations.
@@ -232,7 +244,8 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
     if (this._widthAttributeIsEmpty) {
       this.$el
         .addClass('edit-animate-disable-width')
-        .css('width', '');
+        .css('width', '')
+        .css('background-color', '');
     }
 
     // 2) Remove padding; use animations (these will run simultaneously with)
@@ -255,6 +268,28 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
         'margin-bottom': posProp['margin-bottom'] + 10 + 'px'
       });
     }, 0);
+  },
+
+  /**
+   * Gets the background color of an element (or the inherited one).
+   *
+   * @param $e
+   *   A DOM element.
+   */
+  _getBgColor: function($e) {
+    var c;
+
+    if ($e === null || $e[0].nodeName === 'HTML') {
+      // Fallback to white.
+      return 'rgb(255, 255, 255)';
+    }
+    c = $e.css('background-color');
+    // TRICKY: edge case for Firefox' "transparent" here; this is a
+    // browser bug: https://bugzilla.mozilla.org/show_bug.cgi?id=635724
+    if (c === 'rgba(0, 0, 0, 0)' || c === 'transparent') {
+      return this._getBgColor($e.parent());
+    }
+    return c;
   },
 
   /**
@@ -305,7 +340,24 @@ Drupal.edit.views.PropertyEditorDecorationView = Backbone.View.extend({
     else {
       callback();
     }
+  },
+
+  /**
+   * Removes validation errors' markup changes, if any.
+   *
+   * Note: this only needs to happen for type=direct, because for type=direct,
+   * the property DOM element itself is modified; this is not the case for
+   * type=form.
+   */
+  _removeValidationErrors: function() {
+    if (this.editorName !== 'form') {
+      this.$el
+        .removeClass('edit-validation-error')
+        .next('.edit-validation-errors')
+        .remove();
+    }
   }
+
 });
 
 })(jQuery, Backbone, Drupal);

@@ -19,7 +19,7 @@ class UpdateTest extends RESTTestBase {
    *
    * @var array
    */
-  public static $modules = array('rest', 'entity_test');
+  public static $modules = array('hal', 'rest', 'entity_test');
 
   public static function getInfo() {
     return array(
@@ -41,7 +41,9 @@ class UpdateTest extends RESTTestBase {
     $this->enableService('entity:' . $entity_type, 'PATCH');
     // Create a user account that has the required permissions to create
     // resources via the REST API.
-    $account = $this->drupalCreateUser(array('restful patch entity:' . $entity_type));
+    $permissions = $this->entityPermissions($entity_type, 'update');
+    $permissions[] = 'restful patch entity:' . $entity_type;
+    $account = $this->drupalCreateUser($permissions);
     $this->drupalLogin($account);
 
     // Create an entity and save it to the database.
@@ -53,10 +55,10 @@ class UpdateTest extends RESTTestBase {
     $patch_entity = entity_create($entity_type, $patch_values);
     // We don't want to overwrite the UUID.
     unset($patch_entity->uuid);
-    $serialized = $serializer->serialize($patch_entity, 'drupal_jsonld');
+    $serialized = $serializer->serialize($patch_entity, $this->defaultFormat);
 
     // Update the entity over the REST API.
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, 'application/vnd.drupal.ld+json');
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
     $this->assertResponse(204);
 
     // Re-load updated entity from the database.
@@ -64,103 +66,59 @@ class UpdateTest extends RESTTestBase {
     $this->assertEqual($entity->field_test_text->value, $patch_entity->field_test_text->value, 'Field was successfully updated.');
 
     // Try to empty a field.
-    $normalized = $serializer->normalize($patch_entity, 'drupal_jsonld');
+    $normalized = $serializer->normalize($patch_entity, $this->defaultFormat);
     $normalized['field_test_text'] = array();
-    $serialized = $serializer->encode($normalized, 'jsonld');
+    $serialized = $serializer->encode($normalized, $this->defaultFormat);
 
     // Update the entity over the REST API.
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, 'application/vnd.drupal.ld+json');
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
     $this->assertResponse(204);
 
     // Re-load updated entity from the database.
     $entity = entity_load($entity_type, $entity->id(), TRUE);
     $this->assertNull($entity->field_test_text->value, 'Test field has been cleared.');
 
-    // Try to update a non-existing entity with ID 9999.
-    $this->httpRequest('entity/' . $entity_type . '/9999', 'PATCH', $serialized, 'application/vnd.drupal.ld+json');
-    $this->assertResponse(404);
-    $loaded_entity = entity_load($entity_type, 9999, TRUE);
-    $this->assertFalse($loaded_entity, 'Entity 9999 was not created.');
-
-    // Try to update an entity without proper permissions.
-    $this->drupalLogout();
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, 'application/vnd.drupal.ld+json');
-    $this->assertResponse(403);
-
-    // Try to update a resource which is not REST API enabled.
-    $this->enableService(FALSE);
-    $this->drupalLogin($account);
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, 'application/vnd.drupal.ld+json');
-    $this->assertResponse(404);
-  }
-
-  /**
-   * Tests several valid and invalid PUT update requests on test entities.
-   */
-  public function testPutUpdate() {
-    $serializer = drupal_container()->get('serializer');
-    // @todo once EntityNG is implemented for other entity types test all other
-    // entity types here as well.
-    $entity_type = 'entity_test';
-
-    $this->enableService('entity:' . $entity_type, 'PUT');
-    // Create a user account that has the required permissions to create
-    // resources via the REST API.
-    $account = $this->drupalCreateUser(array('restful put entity:' . $entity_type));
-    $this->drupalLogin($account);
-
-    // Create an entity and save it to the database.
-    $entity = $this->entityCreate($entity_type);
+    // Enable access protection for the text field.
+    // @see entity_test_entity_field_access()
+    $entity->field_test_text->value = 'no access value';
     $entity->save();
 
-    // Create a second entity that will overwrite the original.
-    $update_values = $this->entityValues($entity_type);
-    $update_entity = entity_create($entity_type, $update_values);
-    // Copy the identifier properties over from the original.
-    $update_entity->uuid->value = $entity->uuid();
-    $update_entity->id->value = $entity->id();
+    // Try to empty a field that is access protected.
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
+    $this->assertResponse(403);
 
-    $serialized = $serializer->serialize($update_entity, 'drupal_jsonld');
-    // Update the entity over the REST API.
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PUT', $serialized, 'application/vnd.drupal.ld+json');
-    $this->assertResponse(204);
-
-    // Re-load the updated entity from the database.
+    // Re-load the entity from the database.
     $entity = entity_load($entity_type, $entity->id(), TRUE);
-    // @todo Don't check the user reference field for now until deserialization
-    // for entity references is implemented.
-    unset($update_values['user_id']);
-    foreach ($update_values as $property => $value) {
-      $update_value = $update_entity->{$property}->value;
-      $stored_value = $entity->{$property}->value;
-      $this->assertEqual($stored_value, $update_value, 'Updated property ' . $property . ' expected: ' . $update_value . ', actual: ' . $stored_value);
-    }
+    $this->assertEqual($entity->field_test_text->value, 'no access value', 'Text field was not updated.');
 
-    // Try to delete a property.
-    unset($update_entity->field_test_text);
-    $serialized = $serializer->serialize($update_entity, 'drupal_jsonld');
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PUT', $serialized, 'application/vnd.drupal.ld+json');
-    $this->assertResponse(204);
+    // Try to update an access protected field.
+    $serialized = $serializer->serialize($patch_entity, $this->defaultFormat);
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
+    $this->assertResponse(403);
 
-    // Re-load the updated entity from the database.
+    // Re-load the entity from the database.
     $entity = entity_load($entity_type, $entity->id(), TRUE);
-    $this->assertTrue($entity->field_test_text->isEmpty(), 'Property has been deleted.');
+    $this->assertEqual($entity->field_test_text->value, 'no access value', 'Text field was not updated.');
 
-    // Try to create an entity with ID 9999.
-    $this->httpRequest('entity/' . $entity_type . '/9999', 'PUT', $serialized, 'application/vnd.drupal.ld+json');
+    // Restore the valid test value.
+    $entity->field_test_text->value = $this->randomString();
+    $entity->save();
+
+    // Try to update a non-existing entity with ID 9999.
+    $this->httpRequest('entity/' . $entity_type . '/9999', 'PATCH', $serialized, $this->defaultMimeType);
     $this->assertResponse(404);
     $loaded_entity = entity_load($entity_type, 9999, TRUE);
     $this->assertFalse($loaded_entity, 'Entity 9999 was not created.');
 
     // Try to update an entity without proper permissions.
     $this->drupalLogout();
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PUT', $serialized, 'application/vnd.drupal.ld+json');
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
     $this->assertResponse(403);
 
     // Try to update a resource which is not REST API enabled.
     $this->enableService(FALSE);
     $this->drupalLogin($account);
-    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PUT', $serialized, 'application/vnd.drupal.ld+json');
+    $this->httpRequest('entity/' . $entity_type . '/' . $entity->id(), 'PATCH', $serialized, $this->defaultMimeType);
     $this->assertResponse(404);
   }
 }

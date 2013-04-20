@@ -530,14 +530,12 @@ function drupal_rebuild_form($form_id, &$form_state, $old_form = NULL) {
  * Fetches a form from the cache.
  */
 function form_get_cache($form_build_id, &$form_state) {
-  if ($cached = cache('form')->get('form_' . $form_build_id)) {
-    $form = $cached->data;
-
+  if ($form = Drupal::keyValueExpirable('form')->get($form_build_id)) {
     global $user;
     if ((isset($form['#cache_token']) && drupal_valid_token($form['#cache_token'])) || (!isset($form['#cache_token']) && !$user->uid)) {
-      if ($cached = cache('form')->get('form_state_' . $form_build_id)) {
+      if ($stored_form_state = Drupal::keyValueExpirable('form_state')->get($form_build_id)) {
         // Re-populate $form_state for subsequent rebuilds.
-        $form_state = $cached->data + $form_state;
+        $form_state = $stored_form_state + $form_state;
 
         // If the original form is contained in include files, load the files.
         // @see form_load_include()
@@ -569,12 +567,12 @@ function form_set_cache($form_build_id, $form, $form_state) {
     if ($GLOBALS['user']->uid) {
       $form['#cache_token'] = drupal_get_token();
     }
-    cache('form')->set('form_' . $form_build_id, $form, REQUEST_TIME + $expire);
+    Drupal::keyValueExpirable('form')->setWithExpire($form_build_id, $form, $expire);
   }
 
   // Cache form state.
   if ($data = array_diff_key($form_state, array_flip(form_state_keys_no_cache()))) {
-    cache('form')->set('form_state_' . $form_build_id, $data, REQUEST_TIME + $expire);
+    Drupal::keyValueExpirable('form_state')->setWithExpire($form_build_id, $data, $expire);
   }
 }
 
@@ -915,15 +913,6 @@ function drupal_process_form($form_id, &$form, &$form_state) {
     if ($form_state['submitted'] && !form_get_errors() && !$form_state['rebuild']) {
       // Execute form submit handlers.
       form_execute_handlers('submit', $form, $form_state);
-
-      // We'll clear out the cached copies of the form and its stored data
-      // here, as we've finished with them. The in-memory copies are still
-      // here, though.
-      $config = config('system.performance');
-      if (!$config->get('cache.page.use_internal') && !empty($form_state['values']['form_build_id'])) {
-        cache('form')->delete('form_' . $form_state['values']['form_build_id']);
-        cache('form')->delete('form_state_' . $form_state['values']['form_build_id']);
-      }
 
       // If batches were set in the submit handlers, we process them now,
       // possibly ending execution. We make sure we do not react to the batch
@@ -1516,7 +1505,6 @@ function _form_validate(&$elements, &$form_state, $form_id = NULL) {
  *   defined, those handlers will be stored here.
  */
 function form_execute_handlers($type, &$form, &$form_state) {
-  $return = FALSE;
   // If there was a button pressed, use its handlers.
   if (isset($form_state[$type . '_handlers'])) {
     $handlers = $form_state[$type . '_handlers'];
@@ -1543,9 +1531,7 @@ function form_execute_handlers($type, &$form, &$form_state) {
     else {
       call_user_func_array($function, array(&$form, &$form_state));
     }
-    $return = TRUE;
   }
-  return $return;
 }
 
 /**
@@ -1839,7 +1825,7 @@ function form_builder($form_id, &$element, &$form_state) {
 
   // Special handling if we're on the top level form element.
   if (isset($element['#type']) && $element['#type'] == 'form') {
-    if (!empty($element['#https']) && variable_get('https', FALSE) &&
+    if (!empty($element['#https']) && settings()->get('mixed_mode_sessions', FALSE) &&
         !url_is_external($element['#action'])) {
       global $base_root;
 
@@ -2716,7 +2702,9 @@ function form_process_select($element) {
   // preselecting the first option without intention. #multiple select lists do
   // not get an empty option, as it would not make sense, user interface-wise.
   else {
-    $required = $element['#required'];
+    // If the element is set to #required through #states, override the
+    // element's #required setting.
+    $required = isset($element['#states']['required']) ? TRUE : $element['#required'];
     // If the element is required and there is no #default_value, then add an
     // empty option that will fail validation, so that the user is required to
     // make a choice. Also, if there's a value for #empty_value or
@@ -4617,6 +4605,17 @@ function form_pre_render_file($element) {
   element_set_attributes($element, array('id', 'name', 'size'));
   _form_set_attributes($element, array('form-file'));
 
+  return $element;
+}
+
+/**
+ * Processes a file upload element, make use of #multiple if present.
+ */
+function form_process_file($element) {
+  if ($element['#multiple']) {
+    $element['#attributes'] = array('multiple' => 'multiple');
+    $element['#name'] .= '[]';
+  }
   return $element;
 }
 

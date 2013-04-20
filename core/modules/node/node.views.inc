@@ -266,16 +266,16 @@ function node_views_data() {
     'help' => t('Date in the form of CCYYMMDD.'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_fulldate',
+      'id' => 'date_fulldate',
     ),
   );
 
-  $data['node']['created_year_month'] = array(
+  $data['node']['date_year_month'] = array(
     'title' => t('Created year + month'),
     'help' => t('Date in the form of YYYYMM.'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_year_month',
+      'id' => 'date_year_month',
     ),
   );
 
@@ -284,7 +284,7 @@ function node_views_data() {
     'help' => t('Date in the form of YYYY.'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_year',
+      'id' => 'date_year',
     ),
   );
 
@@ -293,7 +293,7 @@ function node_views_data() {
     'help' => t('Date in the form of MM (01 - 12).'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_month',
+      'id' => 'date_month',
     ),
   );
 
@@ -302,7 +302,7 @@ function node_views_data() {
     'help' => t('Date in the form of DD (01 - 31).'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_day',
+      'id' => 'date_day',
     ),
   );
 
@@ -311,7 +311,7 @@ function node_views_data() {
     'help' => t('Date in the form of WW (01 - 53).'),
     'argument' => array(
       'field' => 'created',
-      'id' => 'node_created_week',
+      'id' => 'date_week',
     ),
   );
 
@@ -320,7 +320,7 @@ function node_views_data() {
     'help' => t('Date in the form of CCYYMMDD.'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_fulldate',
+      'id' => 'date_fulldate',
     ),
   );
 
@@ -329,7 +329,7 @@ function node_views_data() {
     'help' => t('Date in the form of YYYYMM.'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_year_month',
+      'id' => 'date_year_month',
     ),
   );
 
@@ -338,7 +338,7 @@ function node_views_data() {
     'help' => t('Date in the form of YYYY.'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_year',
+      'id' => 'date_year',
     ),
   );
 
@@ -347,7 +347,7 @@ function node_views_data() {
     'help' => t('Date in the form of MM (01 - 12).'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_month',
+      'id' => 'date_month',
     ),
   );
 
@@ -356,7 +356,7 @@ function node_views_data() {
     'help' => t('Date in the form of DD (01 - 31).'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_day',
+      'id' => 'date_day',
     ),
   );
 
@@ -365,7 +365,7 @@ function node_views_data() {
     'help' => t('Date in the form of WW (01 - 53).'),
     'argument' => array(
       'field' => 'changed',
-      'id' => 'node_created_week',
+      'id' => 'date_week',
     ),
   );
 
@@ -630,64 +630,6 @@ function node_row_node_view_preprocess_node(&$vars) {
   if (!empty($options['comments']) && user_access('access comments') && $node->comment) {
     $vars['content']['comments'] = comment_node_page_additions($node);
   }
-}
-
-/**
- * Implements hook_views_query_substitutions().
- */
-function node_views_query_substitutions() {
-  return array(
-    '***ADMINISTER_NODES***' => intval(user_access('administer nodes')),
-    '***VIEW_OWN_UNPUBLISHED_NODES***' => intval(user_access('view own unpublished content')),
-    '***BYPASS_NODE_ACCESS***' =>  intval(user_access('bypass node access')),
-  );
-}
-
-/**
- * Implements hook_views_analyze().
- */
-function node_views_analyze(ViewExecutable $view) {
-  $ret = array();
-  // Check for something other than the default display:
-  if ($view->storage->get('base_table') == 'node') {
-    foreach ($view->displayHandlers as $id => $display) {
-      if (!$display->isDefaulted('access') || !$display->isDefaulted('filters')) {
-        // check for no access control
-        $access = $display->getOption('access');
-        if (empty($access['type']) || $access['type'] == 'none') {
-          $result = db_select('role_permission', 'p')
-            ->fields('p', array('rid', 'permission'))
-            ->condition('p.rid', array(DRUPAL_ANONYMOUS_RID, DRUPAL_AUTHENTICATED_RID), 'IN')
-            ->condition('p.permission', 'access content')
-            ->execute();
-
-          foreach ($result as $role) {
-            $role->safe = TRUE;
-            $roles[$role->rid] = $role;
-          }
-          if (!($roles[DRUPAL_ANONYMOUS_RID]->safe && $roles[DRUPAL_AUTHENTICATED_RID]->safe)) {
-            $ret[] = Analyzer::formatMessage(t('Some roles lack permission to access content, but display %display has no access control.', array('%display' => $display->display['display_title'])), 'warning');
-          }
-          $filters = $display->getOption('filters');
-          foreach ($filters as $filter) {
-            if ($filter['table'] == 'node' && ($filter['field'] == 'status' || $filter['field'] == 'status_extra')) {
-              continue 2;
-            }
-          }
-          $ret[] = Analyzer::formatMessage(t('Display %display has no access control but does not contain a filter for published nodes.', array('%display' => $display->display['display_title'])), 'warning');
-        }
-      }
-    }
-  }
-  foreach ($view->displayHandlers as $display) {
-    if ($display->getPluginId() == 'page') {
-      if ($display->getOption('path') == 'node/%') {
-        $ret[] = Analyzer::formatMessage(t('Display %display has set node/% as path. This will not produce what you want. If you want to have multiple versions of the node view, use panels.', array('%display' => $display->display['display_title'])), 'warning');
-      }
-    }
-  }
-
-  return $ret;
 }
 
 /**

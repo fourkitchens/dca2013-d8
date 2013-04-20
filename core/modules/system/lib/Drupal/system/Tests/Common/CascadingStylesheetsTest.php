@@ -99,7 +99,7 @@ class CascadingStylesheetsTest extends WebTestBase {
    */
   function testRenderInlinePreprocess() {
     $css = 'body { padding: 0px; }';
-    $css_preprocessed = '<style media="all">' . "\n<!--/*--><![CDATA[/*><!--*/\n" . drupal_load_stylesheet_content($css, TRUE) . "\n/*]]>*/-->\n" . '</style>';
+    $css_preprocessed = '<style media="all">' . "\n/* <![CDATA[ */\n" . drupal_load_stylesheet_content($css, TRUE) . "\n/* ]]> */\n" . '</style>';
     drupal_add_css($css, array('type' => 'inline'));
     $styles = drupal_get_css();
     $this->assertEqual(trim($styles), $css_preprocessed, 'Rendering preprocessed inline CSS adds it to the page.');
@@ -156,8 +156,8 @@ class CascadingStylesheetsTest extends WebTestBase {
     drupal_add_css(drupal_get_path('module', 'simpletest') . '/simpletest.css');
     // A few system CSS files, ordered in a strange way.
     $system_path = drupal_get_path('module', 'system');
-    drupal_add_css($system_path . '/system.base.css', array('group' => CSS_SYSTEM, 'weight' => -10));
-    drupal_add_css($system_path . '/system.theme.css', array('group' => CSS_SYSTEM));
+    drupal_add_css($system_path . '/system.base.css', array('group' => CSS_AGGREGATE_SYSTEM, 'weight' => -10));
+    drupal_add_css($system_path . '/system.theme.css', array('group' => CSS_AGGREGATE_SYSTEM));
 
     $expected = array(
       $system_path . '/system.base.css',

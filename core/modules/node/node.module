@@ -19,6 +19,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Template\Attribute;
 use Drupal\entity\Plugin\Core\Entity\EntityDisplay;
 use Drupal\file\Plugin\Core\Entity\File;
+use Drupal\user\Plugin\Core\Entity\User;
 
 /**
  * Denotes that the node is not published.
@@ -56,7 +57,7 @@ const NODE_STICKY = 1;
  * Modules should return this value from hook_node_access() to allow access to a
  * node.
  */
-const NODE_ACCESS_ALLOW = 'allow';
+const NODE_ACCESS_ALLOW = TRUE;
 
 /**
  * Denotes that access is denied for a node.
@@ -64,7 +65,7 @@ const NODE_ACCESS_ALLOW = 'allow';
  * Modules should return this value from hook_node_access() to deny access to a
  * node.
  */
-const NODE_ACCESS_DENY = 'deny';
+const NODE_ACCESS_DENY = FALSE;
 
 /**
  * Denotes that access is unaffected for a node.
@@ -163,6 +164,7 @@ function node_theme() {
     ),
     'node_admin_overview' => array(
       'variables' => array('name' => NULL, 'type' => NULL),
+      'file' => 'content_types.inc',
     ),
     'node_recent_block' => array(
       'variables' => array('nodes' => NULL),
@@ -535,7 +537,7 @@ function node_type_save($info) {
       ->execute();
 
     if (!empty($type->old_type) && $type->old_type != $type->type) {
-      field_attach_rename_bundle('node', $type->old_type, $type->type);
+      entity_invoke_bundle_hook('rename', 'node', $type->old_type, $type->type);
     }
     module_invoke_all('node_type_update', $type);
     $status = SAVED_UPDATED;
@@ -546,7 +548,7 @@ function node_type_save($info) {
       ->fields($fields)
       ->execute();
 
-    field_attach_create_bundle('node', $type->type);
+    entity_invoke_bundle_hook('create', 'node', $type->type);
 
     module_invoke_all('node_type_insert', $type);
     $status = SAVED_NEW;
@@ -663,7 +665,7 @@ function node_type_delete($name) {
   db_delete('node_type')
     ->condition('type', $name)
     ->execute();
-  field_attach_delete_bundle('node', $name);
+  entity_invoke_bundle_hook('delete', 'node', $name);
   module_invoke_all('node_type_delete', $type);
 
   // Clear the node type cache.
@@ -812,7 +814,7 @@ function node_type_cache_reset() {
  * @return
  *   A node type object, with missing values in $info set to their defaults.
  *
- * @see hook_node_ifo()
+ * @see hook_node_info()
  */
 function node_type_set_defaults($info = array()) {
   $info = (array) $info;
@@ -1183,7 +1185,8 @@ function template_preprocess_node(&$variables) {
     $variables['submitted'] = t('Submitted by !username on !datetime', array('!username' => $variables['name'], '!datetime' => $variables['date']));
     if (theme_get_setting('toggle_node_user_picture')) {
       // To change user picture settings (e.g. image style), edit the 'compact'
-      // view mode on User entity.
+      // view mode on the User entity. Note that the 'compact' view mode might
+      // not be configured, so remember to always check the theme setting first.
       $variables['user_picture'] = user_view($node->account, 'compact');
     }
     else {
@@ -1241,10 +1244,10 @@ function node_permission() {
       'restrict access' => TRUE,
     ),
     'access content overview' => array(
-      'title' => t('Access the content overview page'),
-      'description' => t('Access the content overview page at <a href="@url">admin/content</a>.', array(
-        '@url' => url('admin/content'),
-      )),
+      'title' => t('Access the Content overview page'),
+      'description' => user_access('access content overview')
+        ? t('Get an overview of <a href="@url">all content</a>.', array('@url' => url('admin/content')))
+        : t('Get an overview of all content.'),
     ),
     'access content' => array(
       'title' => t('View published content'),
@@ -2277,23 +2280,28 @@ function node_form_search_form_alter(&$form, $form_state) {
       '#collapsed' => TRUE,
       '#attributes' => array('class' => array('search-advanced')),
     );
+    $form['advanced']['keywords-fieldset'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Keywords'),
+      '#collapsible' => FALSE,
+    );
     $form['advanced']['keywords'] = array(
       '#prefix' => '<div class="criterion">',
       '#suffix' => '</div>',
     );
-    $form['advanced']['keywords']['or'] = array(
+    $form['advanced']['keywords-fieldset']['keywords']['or'] = array(
       '#type' => 'textfield',
       '#title' => t('Containing any of the words'),
       '#size' => 30,
       '#maxlength' => 255,
     );
-    $form['advanced']['keywords']['phrase'] = array(
+    $form['advanced']['keywords-fieldset']['keywords']['phrase'] = array(
       '#type' => 'textfield',
       '#title' => t('Containing the phrase'),
       '#size' => 30,
       '#maxlength' => 255,
     );
-    $form['advanced']['keywords']['negative'] = array(
+    $form['advanced']['keywords-fieldset']['keywords']['negative'] = array(
       '#type' => 'textfield',
       '#title' => t('Containing none of the words'),
       '#size' => 30,
@@ -2302,7 +2310,12 @@ function node_form_search_form_alter(&$form, $form_state) {
 
     // Node types:
     $types = array_map('check_plain', node_type_get_names());
-    $form['advanced']['type'] = array(
+    $form['advanced']['types-fieldset'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Types'),
+      '#collapsible' => FALSE,
+    );
+    $form['advanced']['types-fieldset']['type'] = array(
       '#type' => 'checkboxes',
       '#title' => t('Only of the type(s)'),
       '#prefix' => '<div class="criterion">',
@@ -2324,7 +2337,13 @@ function node_form_search_form_alter(&$form, $form_state) {
       $language_options[$langcode] = $language->locked ? t('- @name -', array('@name' => $language->name)) : $language->name;
     }
     if (count($language_options) > 1) {
-      $form['advanced']['language'] = array(
+      $form['advanced']['lang-fieldset'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Languages'),
+        '#collapsible' => FALSE,
+        '#collapsed' => FALSE,
+      );
+      $form['advanced']['lang-fieldset']['language'] = array(
         '#type' => 'checkboxes',
         '#title' => t('Languages'),
         '#prefix' => '<div class="criterion">',
@@ -2507,132 +2526,45 @@ function node_form_system_themes_admin_form_submit($form, &$form_state) {
  *   TRUE if the operation may be performed, FALSE otherwise.
  *
  * @see node_menu()
- *
- * @todo
- *   Add langcode support to node_access schema / queries.
- *   http://drupal.org/node/1658846
  */
 function node_access($op, $node, $account = NULL, $langcode = NULL) {
-  $rights = &drupal_static(__FUNCTION__, array());
-
-  if (!$node || !in_array($op, array('view', 'update', 'delete', 'create'), TRUE)) {
-    // If there was no node to check against, or the $op was not one of the
-    // supported ones, we return access denied.
-    return FALSE;
-  }
-  // If no user object is supplied, the access check is for the current user.
-  if (empty($account)) {
-    $account = $GLOBALS['user'];
+  if (!$node instanceof EntityInterface) {
+    $type = is_object($node) ? $node->type : $node;
+    $node = entity_create('node', array('type' => $type));
   }
 
-  // $node may be a node object, a node type object, or a node type string.
-  // Use the node ID as the primary cache ID, or the node type name otherwise.
-  $cid = is_object($node) ? (isset($node->nid) ? $node->nid : $node->type) : $node;
-
-  // If no language code was provided, default to the node's langcode or
-  // to an empty langcode if a node type was requested. The latter is purely
-  // for caching purposes.
+  // If no language code was provided, default to the node's langcode.
   if (empty($langcode)) {
-    $langcode = (is_object($node) && isset($node->nid)) ? $node->langcode : '';
-  }
-
-  // Fetch information from the node object if possible.
-  $node_status = NULL;
-  $node_uid = NULL;
-  if (is_object($node)) {
-    $node_status = (isset($node->status)) ? $node->status : $node_status;
-    $node_uid = (isset($node->uid)) ? $node->uid : $node_uid;
-    // If it is a proper EntityNG object, use the proper methods.
-    if ($node instanceof \Drupal\Core\Entity\EntityNG){
-      $node_status = $node->get('status', $langcode)->value;
-      $node_uid = $node->get('uid', $langcode)->value ;
+    $langcode = $node->langcode;
+    // If the Language module is enabled, try to use the language from content
+    // negotiation.
+    if (module_exists('language')) {
+      // Load languages the node exists in.
+      $node_translations = $node->getTranslationLanguages();
+      // Load the language from content negotiation.
+      $content_negotiation_langcode = language(LANGUAGE_TYPE_CONTENT)->langcode;
+      // If there is a translation available, use it.
+      if (isset($node_translations[$content_negotiation_langcode])) {
+        $langcode = $content_negotiation_langcode;
+      }
     }
   }
 
-  // If we've already checked access for this node, user and op, return from
-  // cache.
-  if (isset($rights[$account->uid][$cid][$langcode][$op])) {
-    return $rights[$account->uid][$cid][$langcode][$op];
+  // Make sure that if an account is passed, that it is a fully loaded user
+  // object.
+  if ($account && !($account instanceof User)) {
+    $account = user_load($account->uid);
   }
 
-  if (user_access('bypass node access', $account)) {
-    $rights[$account->uid][$cid][$langcode][$op] = TRUE;
-    return TRUE;
-  }
-  if (!user_access('access content', $account)) {
-    $rights[$account->uid][$cid][$langcode][$op] = FALSE;
-    return FALSE;
-  }
-
-  // We grant access to the node if both of the following conditions are met:
-  // - No modules say to deny access.
-  // - At least one module says to grant access.
-  // If no module specified either allow or deny, we fall back to the
-  // node_access table.
-  $access = module_invoke_all('node_access', $node, $op, $account, $langcode);
-  if (in_array(NODE_ACCESS_DENY, $access, TRUE)) {
-    $rights[$account->uid][$cid][$langcode][$op] = FALSE;
-    return FALSE;
-  }
-  elseif (in_array(NODE_ACCESS_ALLOW, $access, TRUE)) {
-    $rights[$account->uid][$cid][$langcode][$op] = TRUE;
-    return TRUE;
-  }
-
-  // Check if authors can view their own unpublished nodes.
-  if ($op == 'view' && empty($node_status) && user_access('view own unpublished content', $account) && $account->uid === $node_uid && $account->uid != 0) {
-    $rights[$account->uid][$cid][$langcode][$op] = TRUE;
-    return TRUE;
-  }
-
-  // If the module did not override the access rights, use those set in the
-  // node_access table.
-  if ($op != 'create' && !empty($node->nid)) {
-    if (module_implements('node_grants')) {
-      $query = db_select('node_access');
-      $query->addExpression('1');
-      $query->condition('grant_' . $op, 1, '>=');
-      $nids = db_or()->condition('nid', $node->nid);
-      if ($node->status) {
-        $nids->condition('nid', 0);
-      }
-      $query->condition($nids);
-      $query->range(0, 1);
-
-      $grants = db_or();
-      foreach (node_access_grants($op, $account) as $realm => $gids) {
-        foreach ($gids as $gid) {
-          $grants->condition(db_and()
-            ->condition('gid', $gid)
-            ->condition('realm', $realm)
-          );
-        }
-      }
-      if (count($grants) > 0) {
-        $query->condition($grants);
-      }
-      $result =  (bool) $query
-        ->execute()
-        ->fetchField();
-      $rights[$account->uid][$cid][$langcode][$op] = $result;
-      return $result;
-    }
-    elseif (is_object($node) && $op == 'view' && !empty($node_status)) {
-      // If no modules implement hook_node_grants(), the default behavior is to
-      // allow all users to view published nodes, so reflect that here.
-      $rights[$account->uid][$cid][$langcode][$op] = TRUE;
-      return TRUE;
-    }
-  }
-
-  return FALSE;
+  $method = $op . 'Access';
+  return entity_access_controller('node')->$method($node, $langcode, $account);
 }
 
 /**
  * Implements hook_node_access().
  */
 function node_node_access($node, $op, $account) {
-  $type = is_string($node) ? $node : $node->type;
+  $type = $node->bundle();
 
   $configured_types = node_permissions_get_configured_types();
   if (isset($configured_types[$type])) {
@@ -2849,6 +2781,9 @@ function node_query_node_access_alter(AlterableInterface $query) {
   if (!$op = $query->getMetaData('op')) {
     $op = 'view';
   }
+  if (!$langcode = $query->getMetaData('langcode')) {
+    $langcode = FALSE;
+  }
 
   // If $account can bypass node access, or there are no node access modules,
   // or the operation is 'view' and the $account has a global view grant
@@ -2886,7 +2821,6 @@ function node_query_node_access_alter(AlterableInterface $query) {
   // Find all instances of the base table being joined -- could appear
   // more than once in the query, and could be aliased. Join each one to
   // the node_access table.
-
   $grants = node_access_grants($op, $account);
   foreach ($tables as $nalias => $tableinfo) {
     $table = $tableinfo['table'];
@@ -2896,8 +2830,8 @@ function node_query_node_access_alter(AlterableInterface $query) {
        ->fields('na', array('nid'));
 
       $grant_conditions = db_or();
-      // If any grant exists for the specified user, then user has access
-      // to the node for the specified operation.
+      // If any grant exists for the specified user, then user has access to the
+      // node for the specified operation.
       foreach ($grants as $realm => $gids) {
         foreach ($gids as $gid) {
           $grant_conditions->condition(db_and()
@@ -2912,6 +2846,20 @@ function node_query_node_access_alter(AlterableInterface $query) {
         $subquery->condition($grant_conditions);
       }
       $subquery->condition('na.grant_' . $op, 1, '>=');
+
+      // Add langcode-based filtering if this is a multilingual site.
+      if (language_multilingual()) {
+        // If no specific langcode to check for is given, use the grant entry
+        // which is set as a fallback.
+        // If a specific langcode is given, use the grant entry for it.
+        if ($langcode === FALSE) {
+          $subquery->condition('na.fallback', 1, '=');
+        }
+        else {
+          $subquery->condition('na.langcode', $langcode, '=');
+        }
+      }
+
       $field = 'nid';
       // Now handle entities.
       $subquery->where("$nalias.$field = na.nid");
@@ -2962,11 +2910,8 @@ function node_access_acquire_grants(EntityInterface $node, $delete = TRUE) {
  * @param \Drupal\Core\Entity\EntityInterface $node
  *   The node whose grants are being written.
  * @param $grants
- *   A list of grants to write. Each grant is an array that must contain the
- *   following keys: realm, gid, grant_view, grant_update, grant_delete.
- *   The realm is specified by a particular module; the gid is as well, and
- *   is a module-defined id to define grant privileges. each grant_* field
- *   is a boolean value.
+ *   A list of grants to write. See hook_node_access_records() for the
+ *   expected structure of the grants array.
  * @param $realm
  *   (optional) If provided, read/write grants for that realm only. Defaults to
  *   NULL.
@@ -2985,18 +2930,35 @@ function _node_access_write_grants(EntityInterface $node, $grants, $realm = NULL
     }
     $query->execute();
   }
-
   // Only perform work when node_access modules are active.
   if (!empty($grants) && count(module_implements('node_grants'))) {
-    $query = db_insert('node_access')->fields(array('nid', 'realm', 'gid', 'grant_view', 'grant_update', 'grant_delete'));
+    $query = db_insert('node_access')->fields(array('nid', 'langcode', 'fallback', 'realm', 'gid', 'grant_view', 'grant_update', 'grant_delete'));
+    // If we have defined a granted langcode, use it. But if not, add a grant
+    // for every language this node is translated to.
     foreach ($grants as $grant) {
       if ($realm && $realm != $grant['realm']) {
         continue;
       }
-      // Only write grants; denies are implicit.
-      if ($grant['grant_view'] || $grant['grant_update'] || $grant['grant_delete']) {
-        $grant['nid'] = $node->nid;
-        $query->values($grant);
+      if (isset($grant['langcode'])) {
+        $grant_languages = array($grant['langcode'] => language_load($grant['langcode']));
+      }
+      else {
+        $grant_languages = $node->getTranslationLanguages(TRUE);
+      }
+      foreach ($grant_languages as $grant_langcode => $grant_language) {
+        // Only write grants; denies are implicit.
+        if ($grant['grant_view'] || $grant['grant_update'] || $grant['grant_delete']) {
+          $grant['nid'] = $node->nid;
+          $grant['langcode'] = $grant_langcode;
+          // The record with the original langcode is used as the fallback.
+          if ($grant['langcode'] == $node->langcode) {
+            $grant['fallback'] = 1;
+          }
+          else {
+            $grant['fallback'] = 0;
+          }
+          $query->values($grant);
+        }
       }
     }
     $query->execute();
@@ -3578,7 +3540,9 @@ function node_modules_disabled($modules) {
     // At this point, the module is already disabled, but its code is still
     // loaded in memory. Module functions must no longer be called. We only
     // check whether a hook implementation function exists and do not invoke it.
-    if (!node_access_needs_rebuild() && module_hook($module, 'node_grants')) {
+    // Node access also needs to be rebuilt if language module is disabled to
+    // remove any language-specific grants.
+    if (!node_access_needs_rebuild() && (module_hook($module, 'node_grants') || $module == 'language')) {
       node_access_needs_rebuild(TRUE);
     }
   }

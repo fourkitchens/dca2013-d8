@@ -11,7 +11,6 @@ use Drupal\block\BlockBase;
 use Drupal\block\Plugin\Core\Entity\Block;
 use Drupal\Component\Annotation\Plugin;
 use Drupal\Core\Annotation\Translation;
-use Drupal\Component\Plugin\Discovery\DiscoveryInterface;
 
 /**
  * Provides a generic Views block.
@@ -42,8 +41,8 @@ class ViewsBlock extends BlockBase {
   /**
    * Overrides \Drupal\Component\Plugin\PluginBase::__construct().
    */
-  public function __construct(array $configuration, $plugin_id, DiscoveryInterface $discovery, Block $entity) {
-    parent::__construct($configuration, $plugin_id, $discovery, $entity);
+  public function __construct(array $configuration, $plugin_id, array $plugin_definition, Block $entity) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity);
 
     list($plugin, $delta) = explode(':', $this->getPluginId());
     list($name, $this->displayID) = explode('-', $delta, 2);
@@ -72,9 +71,9 @@ class ViewsBlock extends BlockBase {
   }
 
   /**
-   * Implements \Drupal\block\BlockBase::build().
+   * Implements \Drupal\block\BlockBase::blockBuild().
    */
-  public function build() {
+  protected function blockBuild() {
     $output = $this->view->executeDisplay($this->displayID);
     // Set the label to the title configured in the view.
     $this->entity->set('label', filter_xss_admin($this->view->getTitle()));

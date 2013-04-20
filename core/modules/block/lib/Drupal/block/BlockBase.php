@@ -30,8 +30,8 @@ abstract class BlockBase extends PluginBase implements BlockInterface {
   /**
    * Overrides \Drupal\Component\Plugin\PluginBase::__construct().
    */
-  public function __construct(array $configuration, $plugin_id, DiscoveryInterface $discovery, Block $entity) {
-    parent::__construct($configuration, $plugin_id, $discovery);
+  public function __construct(array $configuration, $plugin_id, array $plugin_definition, Block $entity) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
 
     $this->entity = $entity;
   }
@@ -238,6 +238,13 @@ abstract class BlockBase extends PluginBase implements BlockInterface {
       '#title' => t('Title'),
       '#maxlength' => 255,
       '#default_value' => !$entity->isNew() ? $entity->label() : $definition['admin_label'],
+      '#required' => TRUE,
+    );
+    $form['label_display'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Display title'),
+      '#default_value' => $entity->label_display == BLOCK_LABEL_VISIBLE ? TRUE : FALSE,
+      '#return_value' => BLOCK_LABEL_VISIBLE,
     );
     $form['machine_name'] = array(
       '#type' => 'machine_name',
@@ -488,5 +495,22 @@ abstract class BlockBase extends PluginBase implements BlockInterface {
    * @see \Drupal\block\BlockBase::submit()
    */
   public function blockSubmit($form, &$form_state) {}
+
+  /**
+   * Implements \Drupal\block\BlockInterface::build().
+   */
+  public function build() {
+    // @todo Move block rendering code common to all blocks from
+    //   BlockRenderController to here: http://drupal.org/node/1927608.
+    return $this->blockBuild();
+  }
+
+  /**
+   * Adds block-type-specific render handling for the block plugin.
+   *
+   * @return array
+   *   A renderable array representing the content of this block.
+   */
+  abstract protected function blockBuild();
 
 }

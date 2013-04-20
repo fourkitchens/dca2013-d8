@@ -6,7 +6,7 @@
  */
 
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\Component\Uuid\Uuid;
 use Drupal\file\Plugin\Core\Entity\File;
@@ -156,13 +156,9 @@ function image_menu() {
   $items['admin/config/media/image-styles/manage/%image_style/delete'] = array(
     'title' => 'Delete',
     'description' => 'Delete an image style.',
-    'load arguments' => array(NULL, (string) IMAGE_STORAGE_NORMAL),
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('image_style_delete_form', 5),
-    'access arguments' => array('administer image styles'),
     'type' => MENU_LOCAL_TASK,
     'weight' => 10,
-    'file' => 'image.admin.inc',
+    'route_name' => 'image_style_delete',
   );
   $items['admin/config/media/image-styles/manage/%image_style/effects/%image_effect'] = array(
     'title' => 'Edit image effect',
@@ -176,11 +172,7 @@ function image_menu() {
   $items['admin/config/media/image-styles/manage/%image_style/effects/%image_effect/delete'] = array(
     'title' => 'Delete image effect',
     'description' => 'Delete an existing effect from a style.',
-    'load arguments' => array(5, (string) IMAGE_STORAGE_EDITABLE),
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('image_effect_delete_form', 5, 7),
-    'access arguments' => array('administer image styles'),
-    'file' => 'image.admin.inc',
+    'route_name' => 'image_effect_delete',
   );
   $items['admin/config/media/image-styles/manage/%image_style/add/%image_effect_definition'] = array(
     'title' => 'Add image effect',
@@ -349,55 +341,6 @@ function image_file_predelete(File $file) {
 }
 
 /**
- * Implements hook_image_style_update().
- */
-function image_image_style_update(ImageStyle $style) {
-  if ($style->id() != $style->getOriginalID()) {
-    $instances = field_read_instances();
-    // Loop through all fields searching for image fields.
-    foreach ($instances as $instance) {
-      if ($instance['widget']['module'] == 'image') {
-        $view_modes = entity_get_view_modes($instance['entity_type']);
-        $view_modes = array('default') + array_keys($view_modes);
-        foreach ($view_modes as $view_mode) {
-          $display = entity_get_display($instance['entity_type'], $instance['bundle'], $view_mode);
-          $display_options = $display->getComponent($instance['field_name']);
-
-          // Check if the formatter involves an image style.
-          if ($display_options && $display_options['type'] == 'image' && $display_options['settings']['image_style'] == $style->getOriginalID()) {
-            // Update display information for any instance using the image
-            // style that was just deleted.
-            $display_options['settings']['image_style'] = $style->id();
-            $display->setComponent($instance['field_name'], $display_options)
-              ->save();
-          }
-        }
-        if ($instance['widget']['settings']['preview_image_style'] == $style->getOriginalID()) {
-          $instance['widget']['settings']['preview_image_style'] = $style->id();
-          field_update_instance($instance);
-        }
-      }
-    }
-  }
-}
-
-/**
- * Implements hook_image_style_delete().
- */
-function image_image_style_delete(ImageStyle $style) {
-  // Flush cached media for the style.
-  image_style_flush($style);
-  // Check whether field instance settings need to be updated.
-  // In case no replacement style was specified, all image fields that are using
-  // the deleted style are left in a broken state.
-  if ($new_id = $style->get('replacementID')) {
-    // The deleted ID is still set as originalID.
-    $style->set('name', $new_id);
-    image_image_style_update($style);
-  }
-}
-
-/**
  * Implements hook_field_delete_field().
  */
 function image_field_delete_field($field) {
@@ -406,8 +349,8 @@ function image_field_delete_field($field) {
   }
 
   // The value of a managed_file element can be an array if #extended == TRUE.
-  $fid = (is_array($field['settings']['default_image']) ? $field['settings']['default_image']['fid'] : $field['settings']['default_image']);
-  if ($fid && ($file = file_load($fid))) {
+  $fid = (isset($field['settings']['default_image']['fids']) ? $field['settings']['default_image']['fids'] : $field['settings']['default_image']);
+  if ($fid && ($file = file_load($fid[0]))) {
     file_usage()->delete($file, 'image', 'default_image', $field['id']);
   }
 }
@@ -421,10 +364,10 @@ function image_field_update_field($field, $prior_field, $has_data) {
   }
 
   // The value of a managed_file element can be an array if #extended == TRUE.
-  $fid_new = (is_array($field['settings']['default_image']) ? $field['settings']['default_image']['fid'] : $field['settings']['default_image']);
-  $fid_old = (is_array($prior_field['settings']['default_image']) ? $prior_field['settings']['default_image']['fid'] : $prior_field['settings']['default_image']);
+  $fid_new = (isset($field['settings']['default_image']['fids']) ? $field['settings']['default_image']['fids'] : $field['settings']['default_image']);
+  $fid_old = (isset($prior_field['settings']['default_image']['fids']) ? $prior_field['settings']['default_image']['fids'] : $prior_field['settings']['default_image']);
 
-  $file_new = $fid_new ? file_load($fid_new) : FALSE;
+  $file_new = $fid_new ? file_load($fid_new[0]) : FALSE;
 
   if ($fid_new != $fid_old) {
 
@@ -432,12 +375,12 @@ function image_field_update_field($field, $prior_field, $has_data) {
     if ($file_new) {
       $file_new->status = FILE_STATUS_PERMANENT;
       $file_new->save();
-      file_usage()->add($file_new, 'image', 'default_image', $field['id']);
+      file_usage()->add($file_new, 'image', 'default_image', $field['uuid']);
     }
 
     // Is there an old file?
-    if ($fid_old && ($file_old = file_load($fid_old))) {
-      file_usage()->delete($file_old, 'image', 'default_image', $field['id']);
+    if ($fid_old && ($file_old = file_load($fid_old[0]))) {
+      file_usage()->delete($file_old, 'image', 'default_image', $field['uuid']);
     }
   }
 
@@ -485,26 +428,26 @@ function image_field_update_instance($instance, $prior_instance) {
   // The value of a managed_file element can be an array if the #extended
   // property is set to TRUE.
   $fid_new = $instance['settings']['default_image'];
-  if (is_array($fid_new)) {
-    $fid_new = $fid_new['fid'];
+  if (isset($fid_new['fids'])) {
+    $fid_new = $fid_new['fids'];
   }
   $fid_old = $prior_instance['settings']['default_image'];
-  if (is_array($fid_old)) {
-    $fid_old = $fid_old['fid'];
+  if (isset($fid_old['fids'])) {
+    $fid_old = $fid_old['fids'];
   }
 
   // If the old and new files do not match, update the default accordingly.
-  $file_new = $fid_new ? file_load($fid_new) : FALSE;
+  $file_new = $fid_new ? file_load($fid_new[0]) : FALSE;
   if ($fid_new != $fid_old) {
     // Save the new file, if present.
     if ($file_new) {
       $file_new->status = FILE_STATUS_PERMANENT;
       $file_new->save();
-      file_usage()->add($file_new, 'image', 'default_image', $instance['id']);
+      file_usage()->add($file_new, 'image', 'default_image', $instance['uuid']);
     }
     // Delete the old file, if present.
-    if ($fid_old && ($file_old = file_load($fid_old))) {
-      file_usage()->delete($file_old, 'image', 'default_image', $instance['id']);
+    if ($fid_old && ($file_old = file_load($fid_old[0]))) {
+      file_usage()->delete($file_old, 'image', 'default_image', $instance['uuid']);
     }
   }
 
@@ -540,23 +483,6 @@ function image_path_flush($path) {
  */
 function image_style_load($name) {
   return entity_load('image_style', $name);
-}
-
-/**
- * Implements hook_image_style_load.
- */
-function image_image_style_load($styles) {
-  foreach ($styles as $style) {
-    if (!empty($style->effects)) {
-      foreach ($style->effects as $ieid => $effect) {
-        $definition = image_effect_definition_load($effect['name']);
-        $effect = array_merge($definition, $effect);
-        $style->effects[$ieid] = $effect;
-      }
-      // Sort effects by weight.
-      uasort($style->effects, 'drupal_sort_weight');
-    }
-  }
 }
 
 /**
@@ -669,7 +595,7 @@ function image_style_deliver($style, $scheme) {
       'Content-Type' => $image->info['mime_type'],
       'Content-Length' => $image->info['file_size'],
     );
-    return file_transfer($uri, $headers);
+    return new BinaryFileResponse($uri, 200, $headers);
   }
   else {
     watchdog('image', 'Unable to generate the derived image located at %path.', array('%path' => $derivative_uri));
@@ -1103,4 +1029,3 @@ function image_filter_keyword($value, $current_pixels, $new_pixels) {
 function _image_effect_definitions_sort($a, $b) {
   return strcasecmp($a['name'], $b['name']);
 }
-

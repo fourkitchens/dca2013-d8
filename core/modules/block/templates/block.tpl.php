@@ -6,6 +6,8 @@
  *
  * Available variables:
  * - $block->label: Block title.
+ * - $block->label_hidden: The hidden block title value if the block was
+ *    configured to hide the title ($block->label is empty in this case).
  * - $content: Block content.
  * - $block->module: Module that generated the block.
  * - $block->delta: An ID for the block, unique within each module.
@@ -25,10 +27,6 @@
  *   the template.
  *
  * Helper variables:
- * - $block_zebra: Outputs 'odd' and 'even' dependent on each block region.
- * - $zebra: Same output as $block_zebra but independent of any block region.
- * - $block_id: Counter dependent on each block region.
- * - $id: Same output as $block_id but independent of any block region.
  * - $is_front: Flags true when presented in the front page.
  * - $logged_in: Flags true when the current user is a logged-in member.
  * - $is_admin: Flags true when the current user is an administrator.

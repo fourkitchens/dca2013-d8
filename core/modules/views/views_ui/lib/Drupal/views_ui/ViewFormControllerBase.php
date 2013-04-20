@@ -82,7 +82,7 @@ abstract class ViewFormControllerBase extends EntityFormController {
     $list[$module_path . '/css/views-admin.css'] = array();
     $list[$module_path . '/css/views-admin.theme.css'] = array();
 
-    if (module_exists('contextual')) {
+    if (\Drupal::moduleHandler()->moduleExists('contextual')) {
       $list[$module_path . '/css/views-admin.contextual.css'] = array();
     }
 
@@ -129,14 +129,14 @@ abstract class ViewFormControllerBase extends EntityFormController {
     }
 
     // Mark the display tab as red to show validation errors.
-    $view->get('executable')->validate();
+    $errors = $view->get('executable')->validate();
     foreach ($view->get('display') as $id => $display) {
-      if (!empty($view->display_errors[$id])) {
+      if (!empty($errors[$id])) {
         // Always show the tab.
         $tabs[$id]['#access'] = TRUE;
         // Add a class to mark the error and a title to make a hover tip.
         $tabs[$id]['#link']['localized_options']['attributes']['class'][] = 'error';
-        $tabs[$id]['#link']['localized_options']['attributes']['title'] = t('This display has one or more validation errors; please review it.');
+        $tabs[$id]['#link']['localized_options']['attributes']['title'] = t('This display has one or more validation errors.');
       }
     }
 

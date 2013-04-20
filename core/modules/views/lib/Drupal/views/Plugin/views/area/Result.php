@@ -7,16 +7,14 @@
 
 namespace Drupal\views\Plugin\views\area;
 
-use Drupal\Component\Annotation\Plugin;
+use Drupal\Component\Annotation\PluginID;
 
 /**
  * Views area handler to display some configurable result summary.
  *
  * @ingroup views_area_handlers
  *
- * @Plugin(
- *   id = "result"
- * )
+ * @PluginID("result")
  */
 class Result extends AreaPluginBase {
 
@@ -38,7 +36,7 @@ class Result extends AreaPluginBase {
         '@start -- the initial record number in the set',
         '@end -- the last record number in the set',
         '@total -- the total records in the set',
-        '@name -- the human-readable name of the view',
+        '@label -- the human-readable name of the view',
         '@per_page -- the number of items per page',
         '@current_page -- the current page number',
         '@current_record_count -- the current page record count',
@@ -57,12 +55,12 @@ class Result extends AreaPluginBase {
 
 
   /**
-   * Find out the information to render.
+   * Implements \Drupal\views\Plugin\views\area\AreaPluginBase::render().
    */
   function render($empty = FALSE) {
     // Must have options and does not work on summaries.
     if (!isset($this->options['content']) || $this->view->plugin_name == 'default_summary') {
-      return;
+      return array();
     }
     $output = '';
     $format = $this->options['content'];
@@ -73,7 +71,7 @@ class Result extends AreaPluginBase {
     // @TODO: Maybe use a possible is views empty functionality.
     // Not every view has total_rows set, use view->result instead.
     $total = isset($this->view->total_rows) ? $this->view->total_rows : count($this->view->result);
-    $name = check_plain($this->view->storage->getHumanName());
+    $label = check_plain($this->view->storage->label());
     if ($per_page === 0) {
       $page_count = 1;
       $start = 1;
@@ -90,7 +88,7 @@ class Result extends AreaPluginBase {
     }
     $current_record_count = ($end - $start) + 1;
     // Get the search information.
-    $items = array('start', 'end', 'total', 'name', 'per_page', 'current_page', 'current_record_count', 'page_count');
+    $items = array('start', 'end', 'total', 'label', 'per_page', 'current_page', 'current_record_count', 'page_count');
     $replacements = array();
     foreach ($items as $item) {
       $replacements["@$item"] = ${$item};
@@ -99,7 +97,10 @@ class Result extends AreaPluginBase {
     if (!empty($total)) {
       $output .= filter_xss_admin(str_replace(array_keys($replacements), array_values($replacements), $format));
     }
-    return $output;
+    // Return as render array.
+    return array(
+      '#markup' => $output,
+    );
   }
 
 }
