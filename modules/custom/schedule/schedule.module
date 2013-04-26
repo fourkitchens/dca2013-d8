@@ -1,0 +1,40 @@
+<?php
+
+/**
+ * @file
+ * The schedule page.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function schedule_menu() {
+  $items['schedule'] = array(
+    'title' => 'Conference schedule',
+    'description' => 'The schedule page.',
+    'page callback' => 'schedule_page_view',
+    'access arguments' => array('access content'),
+  );
+  return $items;
+}
+
+/**
+ * Page callback.
+ */
+function schedule_page_view() {
+  $options = array('scope' => 'footer');
+  drupal_add_js('modules/custom/schedule/handlebars.js', $options);
+  drupal_add_js('modules/custom/schedule/ember.js', $options);
+  drupal_add_js('modules/custom/schedule/schedule.js', $options);
+
+  $templates = array(
+    'application.hbs',
+    'schedule.hbs',
+  );
+  $output = '';
+  foreach ($templates as $tpl) {
+    $output .= file_get_contents(drupal_get_path('module', 'schedule') . '/' . $tpl);
+  }
+
+  return $output;
+}

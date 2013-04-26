@@ -1,0 +1,9 @@
+<script type="text/x-handlebars" data-template-name="schedule">
+{{#each session in allSessions}}
+  <div>
+    <b>{{session.title}}</b>
+    <p>{{session.presenters}}</p>
+    <p>{{session.tag}}</p>
+  </div>
+{{/each}}
+</script>
